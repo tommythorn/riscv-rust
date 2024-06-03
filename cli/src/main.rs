@@ -1,14 +1,14 @@
 extern crate getopts;
 extern crate riscv_emu_rust;
 
-mod popup_terminal;
 mod dummy_terminal;
+mod popup_terminal;
 
-use riscv_emu_rust::Emulator;
+use dummy_terminal::DummyTerminal;
+use popup_terminal::PopupTerminal;
 use riscv_emu_rust::cpu::Xlen;
 use riscv_emu_rust::terminal::Terminal;
-use popup_terminal::PopupTerminal;
-use dummy_terminal::DummyTerminal;
+use riscv_emu_rust::Emulator;
 
 use std::env;
 use std::fs::File;
@@ -18,7 +18,7 @@ use getopts::Options;
 
 enum TerminalType {
 	PopupTerminal,
-	DummyTerminal
+	DummyTerminal,
 }
 
 fn print_usage(program: &str, opts: Options) {
@@ -33,17 +33,26 @@ fn get_terminal(terminal_type: TerminalType) -> Box<dyn Terminal> {
 	}
 }
 
-fn main () -> std::io::Result<()> {
+fn main() -> std::io::Result<()> {
 	let args: Vec<String> = env::args().collect();
 	let program = args[0].clone();
 
 	let mut opts = Options::new();
-	opts.optopt("x", "xlen", "Set bit mode. Default is auto detect from elf file", "32|64");
+	opts.optopt(
+		"x",
+		"xlen",
+		"Set bit mode. Default is auto detect from elf file",
+		"32|64",
+	);
 	opts.optopt("f", "fs", "File system image file", "xv6/fs.img");
 	opts.optopt("d", "dtb", "Device tree file", "linux/dtb");
 	opts.optflag("n", "no_terminal", "No popup terminal");
 	opts.optflag("h", "help", "Show this help menu");
-	opts.optflag("p", "page_cache", "Enable experimental page cache optimization");
+	opts.optflag(
+		"p",
+		"page_cache",
+		"Enable experimental page cache optimization",
+	);
 
 	let matches = match opts.parse(&args[1..]) {
 		Ok(m) => m,
@@ -73,7 +82,7 @@ fn main () -> std::io::Result<()> {
 			file.read_to_end(&mut contents)?;
 			contents
 		}
-		None => vec![]
+		None => vec![],
 	};
 
 	let mut has_dtb = false;
@@ -85,7 +94,7 @@ fn main () -> std::io::Result<()> {
 			file.read_to_end(&mut contents)?;
 			contents
 		}
-		None => vec![]
+		None => vec![],
 	};
 
 	let elf_filename = args[1].clone();
@@ -97,23 +106,23 @@ fn main () -> std::io::Result<()> {
 		true => {
 			println!("No popup terminal mode. Output will be flushed on your terminal but you can not input.");
 			TerminalType::DummyTerminal
-		},
-		false => TerminalType::PopupTerminal
+		}
+		false => TerminalType::PopupTerminal,
 	};
 
 	let mut emulator = Emulator::new(get_terminal(terminal_type));
 	emulator.setup_program(elf_contents);
-	
+
 	match matches.opt_str("x") {
 		Some(x) => match x.as_str() {
 			"32" => {
 				println!("Force to 32-bit mode.");
 				emulator.update_xlen(Xlen::Bit32);
-			},
+			}
 			"64" => {
 				println!("Force to 64-bit mode.");
 				emulator.update_xlen(Xlen::Bit64);
-			},
+			}
 			_ => {
 				print_usage(&program, opts);
 				// @TODO: throw error?

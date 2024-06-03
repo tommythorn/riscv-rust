@@ -1,11 +1,11 @@
-extern crate wasm_bindgen;
 extern crate riscv_emu_rust;
+extern crate wasm_bindgen;
 
-use wasm_bindgen::prelude::*;
 use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
 
-use riscv_emu_rust::Emulator;
 use riscv_emu_rust::default_terminal::DefaultTerminal;
+use riscv_emu_rust::Emulator;
 
 /// `WasmRiscv` is an interface between user JavaScript code and
 /// WebAssembly RISC-V emulator. The following code is example
@@ -50,7 +50,7 @@ use riscv_emu_rust::default_terminal::DefaultTerminal;
 /// ```
 #[wasm_bindgen]
 pub struct WasmRiscv {
-	emulator: Emulator
+	emulator: Emulator,
 }
 
 #[wasm_bindgen]
@@ -58,7 +58,7 @@ impl WasmRiscv {
 	/// Creates a new `WasmRiscv`.
 	pub fn new() -> Self {
 		WasmRiscv {
-			emulator: Emulator::new(Box::new(DefaultTerminal::new()))
+			emulator: Emulator::new(Box::new(DefaultTerminal::new())),
 		}
 	}
 
@@ -180,25 +180,34 @@ impl WasmRiscv {
 	///        of valid memory address range)
 	pub fn load_doubleword(&mut self, address: u64, error: &mut [u8]) -> u64 {
 		for i in 0..8 {
-			match self.emulator.get_mut_cpu()
-				.get_mut_mmu().validate_address(address.wrapping_add(i)) {
+			match self
+				.emulator
+				.get_mut_cpu()
+				.get_mut_mmu()
+				.validate_address(address.wrapping_add(i))
+			{
 				Ok(valid) => {
 					if !valid {
 						error[0] = 2;
 						return 0;
 					}
-				},
+				}
 				Err(()) => {
 					error[0] = 1;
 					return 0;
 				}
 			}
 		}
-		match self.emulator.get_mut_cpu().get_mut_mmu().load_doubleword(address) {
+		match self
+			.emulator
+			.get_mut_cpu()
+			.get_mut_mmu()
+			.load_doubleword(address)
+		{
 			Ok(data) => {
 				error[0] = 0;
 				data
-			},
+			}
 			Err(_trap) => {
 				error[0] = 1;
 				0
@@ -268,7 +277,7 @@ impl WasmRiscv {
 			Some(address) => {
 				error[0] = 0;
 				address
-			},
+			}
 			None => {
 				error[0] = 1;
 				0

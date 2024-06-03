@@ -23,20 +23,26 @@ const SECTOR_SIZE: u64 = 512;
 pub struct VirtioBlockDisk {
 	used_ring_index: u16,
 	clock: u64,
-	device_features: u64, // read only
-	device_features_sel: u32, // write only
-	driver_features: u32, // write only
+	device_features: u64,      // read only
+	device_features_sel: u32,  // write only
+	driver_features: u32,      // write only
 	_driver_features_sel: u32, // write only
-	guest_page_size: u32, // write only
-	queue_select: u32, // write only
-	queue_size: u32, // write only
-	queue_align: u32, // write only
-	queue_pfn: u32, // read and write
-	queue_notify: u32, // write only
-	interrupt_status: u32, // read only
-	status: u32, // read and write
-	notify_clocks: Vec::<u64>,
-	contents: Vec<u64>
+	guest_page_size: u32,      // write only
+	queue_select: u32,         // write only
+	queue_size: u32,           // write only
+	queue_align: u32,          // write only
+	queue_pfn: u32,            // read and write
+	queue_notify: u32,         // write only
+	interrupt_status: u32,     // read only
+	status: u32,               // read and write
+	notify_clocks: Vec<u64>,
+	contents: Vec<u64>,
+}
+
+impl Default for VirtioBlockDisk {
+	fn default() -> Self {
+		Self::new()
+	}
 }
 
 impl VirtioBlockDisk {
@@ -58,7 +64,7 @@ impl VirtioBlockDisk {
 			status: 0,
 			interrupt_status: 0,
 			notify_clocks: Vec::new(),
-			contents: vec![]
+			contents: vec![],
 		}
 	}
 
@@ -78,9 +84,10 @@ impl VirtioBlockDisk {
 			self.contents.push(0);
 		}
 		for i in 0..contents.len() {
-			let index = (i >> 3) as usize;
+			let index = i >> 3;
 			let pos = (i % 8) * 8;
-			self.contents[index] = (self.contents[index] & !(0xff << pos)) | ((contents[i] as u64) << pos);
+			self.contents[index] =
+				(self.contents[index] & !(0xff << pos)) | ((contents[i] as u64) << pos);
 		}
 	}
 
@@ -90,7 +97,9 @@ impl VirtioBlockDisk {
 	/// # Arguments
 	/// * `memory`
 	pub fn tick(&mut self, memory: &mut MemoryWrapper) {
-		if self.notify_clocks.len() > 0 && (self.clock == self.notify_clocks[0] + DISK_ACCESS_DELAY) {
+		if !self.notify_clocks.is_empty()
+			&& (self.clock == self.notify_clocks[0] + DISK_ACCESS_DELAY)
+		{
 			// bit 0 in interrupt_status register indicates
 			// the interrupt was asserted because the device has used a buffer
 			// in at least one of the active virtual queues.
@@ -124,9 +133,15 @@ impl VirtioBlockDisk {
 			0x1000100f => 0x55,
 			// Flags representing features the device supports
 			0x10001010 => ((self.device_features >> (self.device_features_sel * 32)) & 0xff) as u8,
-			0x10001011 => (((self.device_features >> (self.device_features_sel * 32)) >> 8) & 0xff) as u8,
-			0x10001012 => (((self.device_features >> (self.device_features_sel * 32)) >> 16) & 0xff) as u8,
-			0x10001013 => (((self.device_features >> (self.device_features_sel * 32)) >> 24) & 0xff) as u8,
+			0x10001011 => {
+				(((self.device_features >> (self.device_features_sel * 32)) >> 8) & 0xff) as u8
+			}
+			0x10001012 => {
+				(((self.device_features >> (self.device_features_sel * 32)) >> 16) & 0xff) as u8
+			}
+			0x10001013 => {
+				(((self.device_features >> (self.device_features_sel * 32)) >> 24) & 0xff) as u8
+			}
 			// Maximum virtual queue size
 			0x10001034 => MAX_QUEUE_SIZE as u8,
 			0x10001035 => (MAX_QUEUE_SIZE >> 8) as u8,
@@ -156,7 +171,7 @@ impl VirtioBlockDisk {
 			0x10001105 => 0,
 			0x10001106 => 0,
 			0x10001107 => 0,
-			_ => 0
+			_ => 0,
 		}
 	}
 
@@ -170,105 +185,114 @@ impl VirtioBlockDisk {
 		match address {
 			0x10001014 => {
 				self.device_features_sel = (self.device_features_sel & !0xff) | (value as u32);
-			},
+			}
 			0x10001015 => {
-				self.device_features_sel = (self.device_features_sel & !(0xff << 8)) | ((value as u32) << 8);
-			},
+				self.device_features_sel =
+					(self.device_features_sel & !(0xff << 8)) | ((value as u32) << 8);
+			}
 			0x10001016 => {
-				self.device_features_sel = (self.device_features_sel & !(0xff << 16)) | ((value as u32) << 16);			
-			},
+				self.device_features_sel =
+					(self.device_features_sel & !(0xff << 16)) | ((value as u32) << 16);
+			}
 			0x10001017 => {
-				self.device_features_sel = (self.device_features_sel & !(0xff << 24)) | ((value as u32) << 24);
-			},
+				self.device_features_sel =
+					(self.device_features_sel & !(0xff << 24)) | ((value as u32) << 24);
+			}
 			0x10001020 => {
 				self.driver_features = (self.driver_features & !0xff) | (value as u32);
-			},
+			}
 			0x10001021 => {
-				self.driver_features = (self.driver_features & !(0xff << 8)) | ((value as u32) << 8);
-			},
+				self.driver_features =
+					(self.driver_features & !(0xff << 8)) | ((value as u32) << 8);
+			}
 			0x10001022 => {
-				self.driver_features = (self.driver_features & !(0xff << 16)) | ((value as u32) << 16);			
-			},
+				self.driver_features =
+					(self.driver_features & !(0xff << 16)) | ((value as u32) << 16);
+			}
 			0x10001023 => {
-				self.driver_features = (self.driver_features & !(0xff << 24)) | ((value as u32) << 24);
-			},
+				self.driver_features =
+					(self.driver_features & !(0xff << 24)) | ((value as u32) << 24);
+			}
 			0x10001028 => {
 				self.guest_page_size = (self.guest_page_size & !0xff) | (value as u32);
-			},
+			}
 			0x10001029 => {
-				self.guest_page_size = (self.guest_page_size & !(0xff << 8)) | ((value as u32) << 8);
-			},
+				self.guest_page_size =
+					(self.guest_page_size & !(0xff << 8)) | ((value as u32) << 8);
+			}
 			0x1000102a => {
-				self.guest_page_size = (self.guest_page_size & !(0xff << 16)) | ((value as u32) << 16);			
-			},
+				self.guest_page_size =
+					(self.guest_page_size & !(0xff << 16)) | ((value as u32) << 16);
+			}
 			0x1000102b => {
-				self.guest_page_size = (self.guest_page_size & !(0xff << 24)) | ((value as u32) << 24);
-			},
+				self.guest_page_size =
+					(self.guest_page_size & !(0xff << 24)) | ((value as u32) << 24);
+			}
 			0x10001030 => {
 				self.queue_select = (self.queue_select & !0xff) | (value as u32);
-			},
+			}
 			0x10001031 => {
 				self.queue_select = (self.queue_select & !(0xff << 8)) | ((value as u32) << 8);
-			},
+			}
 			0x10001032 => {
-				self.queue_select = (self.queue_select & !(0xff << 16)) | ((value as u32) << 16);			
-			},
+				self.queue_select = (self.queue_select & !(0xff << 16)) | ((value as u32) << 16);
+			}
 			0x10001033 => {
 				self.queue_select = (self.queue_select & !(0xff << 24)) | ((value as u32) << 24);
 				if self.queue_select != 0 {
 					panic!("Virtio: No multi queue support yet.");
 				}
-			},
+			}
 			0x10001038 => {
 				self.queue_size = (self.queue_size & !0xff) | (value as u32);
-			},
+			}
 			0x10001039 => {
 				self.queue_size = (self.queue_size & !(0xff << 8)) | ((value as u32) << 8);
-			},
+			}
 			0x1000103a => {
 				self.queue_size = (self.queue_size & !(0xff << 16)) | ((value as u32) << 16);
-			},
+			}
 			0x1000103b => {
 				self.queue_size = (self.queue_size & !(0xff << 24)) | ((value as u32) << 24);
-			},
+			}
 			0x1000103c => {
 				self.queue_align = (self.queue_align & !0xff) | (value as u32);
-			},
+			}
 			0x1000103d => {
 				self.queue_align = (self.queue_align & !(0xff << 8)) | ((value as u32) << 8);
-			},
+			}
 			0x1000103e => {
-				self.queue_align = (self.queue_align & !(0xff << 16)) | ((value as u32) << 16);			
-			},
+				self.queue_align = (self.queue_align & !(0xff << 16)) | ((value as u32) << 16);
+			}
 			0x1000103f => {
 				self.queue_align = (self.queue_align & !(0xff << 24)) | ((value as u32) << 24);
-			},
+			}
 			0x10001040 => {
 				self.queue_pfn = (self.queue_pfn & !0xff) | (value as u32);
-			},
+			}
 			0x10001041 => {
 				self.queue_pfn = (self.queue_pfn & !(0xff << 8)) | ((value as u32) << 8);
-			},
+			}
 			0x10001042 => {
-				self.queue_pfn = (self.queue_pfn & !(0xff << 16)) | ((value as u32) << 16);			
-			},
+				self.queue_pfn = (self.queue_pfn & !(0xff << 16)) | ((value as u32) << 16);
+			}
 			0x10001043 => {
 				self.queue_pfn = (self.queue_pfn & !(0xff << 24)) | ((value as u32) << 24);
-			},
+			}
 			// @TODO: Queue request support
 			0x10001050 => {
 				self.queue_notify = (self.queue_notify & !0xff) | (value as u32);
-			},
+			}
 			0x10001051 => {
 				self.queue_notify = (self.queue_notify & !(0xff << 8)) | ((value as u32) << 8);
-			},
+			}
 			0x10001052 => {
-				self.queue_notify = (self.queue_notify & !(0xff << 16)) | ((value as u32) << 16);			
-			},
+				self.queue_notify = (self.queue_notify & !(0xff << 16)) | ((value as u32) << 16);
+			}
 			0x10001053 => {
 				self.queue_notify = (self.queue_notify & !(0xff << 24)) | ((value as u32) << 24);
 				self.notify_clocks.push(self.clock);
-			},
+			}
 			0x10001064 => {
 				// interrupt ack
 				if (value & 0x1) == 1 {
@@ -276,19 +300,19 @@ impl VirtioBlockDisk {
 				} else {
 					panic!("Unknown ack {:X}", value);
 				}
-			},
+			}
 			0x10001070 => {
 				self.status = (self.status & !0xff) | (value as u32);
-			},
+			}
 			0x10001071 => {
 				self.status = (self.status & !(0xff << 8)) | ((value as u32) << 8);
-			},
+			}
 			0x10001072 => {
-				self.status = (self.status & !(0xff << 16)) | ((value as u32) << 16);			
-			},
+				self.status = (self.status & !(0xff << 16)) | ((value as u32) << 16);
+			}
 			0x10001073 => {
 				self.status = (self.status & !(0xff << 24)) | ((value as u32) << 24);
-			},
+			}
 			_ => {}
 		};
 	}
@@ -300,10 +324,28 @@ impl VirtioBlockDisk {
 	/// * `mem_addresss` Physical address. Must be eight-byte aligned.
 	/// * `disk_address` Must be eight-byte aligned.
 	/// * `length` Must be eight-byte aligned.
-	fn transfer_from_disk(&mut self, memory: &mut MemoryWrapper, mem_address: u64, disk_address: u64, length: u64) {
-		debug_assert!((mem_address % 8) == 0, "Memory address should be eight-byte aligned. {:X}", mem_address);
-		debug_assert!((disk_address % 8) == 0, "Disk address should be eight-byte aligned. {:X}", disk_address);
-		debug_assert!((length % 8) == 0, "Length should be eight-byte aligned. {:X}", length);
+	fn transfer_from_disk(
+		&mut self,
+		memory: &mut MemoryWrapper,
+		mem_address: u64,
+		disk_address: u64,
+		length: u64,
+	) {
+		debug_assert!(
+			(mem_address % 8) == 0,
+			"Memory address should be eight-byte aligned. {:X}",
+			mem_address
+		);
+		debug_assert!(
+			(disk_address % 8) == 0,
+			"Disk address should be eight-byte aligned. {:X}",
+			disk_address
+		);
+		debug_assert!(
+			(length % 8) == 0,
+			"Length should be eight-byte aligned. {:X}",
+			length
+		);
 		for i in 0..(length / 8) {
 			let disk_index = ((disk_address + i * 8) >> 3) as usize;
 			memory.write_doubleword(mem_address + i * 8, self.contents[disk_index]);
@@ -317,10 +359,28 @@ impl VirtioBlockDisk {
 	/// * `mem_addresss` Physical address. Must be eight-byte aligned.
 	/// * `disk_address` Must be eight-byte aligned.
 	/// * `length` Must be eight-byte aligned.
-	fn transfer_to_disk(&mut self, memory: &mut MemoryWrapper, mem_address: u64, disk_address: u64, length: u64) {
-		debug_assert!((mem_address % 8) == 0, "Memory address should be eight-byte aligned. {:X}", mem_address);
-		debug_assert!((disk_address % 8) == 0, "Disk address should be eight-byte aligned. {:X}", disk_address);
-		debug_assert!((length % 8) == 0, "Length should be eight-byte aligned. {:X}", length);
+	fn transfer_to_disk(
+		&mut self,
+		memory: &mut MemoryWrapper,
+		mem_address: u64,
+		disk_address: u64,
+		length: u64,
+	) {
+		debug_assert!(
+			(mem_address % 8) == 0,
+			"Memory address should be eight-byte aligned. {:X}",
+			mem_address
+		);
+		debug_assert!(
+			(disk_address % 8) == 0,
+			"Disk address should be eight-byte aligned. {:X}",
+			disk_address
+		);
+		debug_assert!(
+			(length % 8) == 0,
+			"Length should be eight-byte aligned. {:X}",
+			length
+		);
 		for i in 0..(length / 8) {
 			let disk_index = ((disk_address + i * 8) >> 3) as usize;
 			self.contents[disk_index] = memory.read_doubleword(mem_address + i * 8);
@@ -408,7 +468,9 @@ impl VirtioBlockDisk {
 
 		let _avail_flag = memory.read_halfword(base_avail_address) as u64;
 		let _avail_index = memory.read_halfword(base_avail_address.wrapping_add(2)) as u64;
-		let desc_index_address = base_avail_address.wrapping_add(4).wrapping_add((self.used_ring_index as u64 % queue_size) * 2);
+		let desc_index_address = base_avail_address
+			.wrapping_add(4)
+			.wrapping_add((self.used_ring_index as u64 % queue_size) * 2);
 		let desc_head_index = (memory.read_halfword(desc_index_address) as u64) % queue_size;
 
 		/*
@@ -431,7 +493,8 @@ impl VirtioBlockDisk {
 			let desc_addr = memory.read_doubleword(desc_element_address);
 			let desc_len = memory.read_word(desc_element_address.wrapping_add(8));
 			let desc_flags = memory.read_halfword(desc_element_address.wrapping_add(12));
-			desc_next = (memory.read_halfword(desc_element_address.wrapping_add(14)) as u64) % queue_size;
+			desc_next =
+				(memory.read_halfword(desc_element_address.wrapping_add(14)) as u64) % queue_size;
 
 			/*
 			println!("Desc addr:{:X}", desc_addr);
@@ -460,27 +523,43 @@ impl VirtioBlockDisk {
 					println!("Blk reserved:{:X}", _blk_reserved);
 					println!("Blk sector:{:X}", blk_sector);
 					*/
-				},
+				}
 				1 => {
 					// Second descriptor: Read/Write disk
 					match (desc_flags & VIRTQ_DESC_F_WRITE) == 0 {
-						true => { // write to disk
-							if (desc_addr % 8) == 0 && ((blk_sector * SECTOR_SIZE) % 8) == 0 &&
-								(desc_len % 8) == 0 {
+						true => {
+							// write to disk
+							if (desc_addr % 8) == 0
+								&& ((blk_sector * SECTOR_SIZE) % 8) == 0
+								&& (desc_len % 8) == 0
+							{
 								// Enter fast path if possible
-								self.transfer_to_disk(memory, desc_addr, blk_sector * SECTOR_SIZE, desc_len as u64);
+								self.transfer_to_disk(
+									memory,
+									desc_addr,
+									blk_sector * SECTOR_SIZE,
+									desc_len as u64,
+								);
 							} else {
 								for i in 0..desc_len as u64 {
 									let data = memory.read_byte(desc_addr + i);
 									self.write_to_disk(blk_sector * SECTOR_SIZE + i, data);
 								}
 							}
-						},
-						false => { // read from disk
-							if (desc_addr % 8) == 0 && ((blk_sector * SECTOR_SIZE) % 8) == 0 &&
-								(desc_len % 8) == 0 {
+						}
+						false => {
+							// read from disk
+							if (desc_addr % 8) == 0
+								&& ((blk_sector * SECTOR_SIZE) % 8) == 0
+								&& (desc_len % 8) == 0
+							{
 								// Enter fast path if possible
-								self.transfer_from_disk(memory, desc_addr, blk_sector * SECTOR_SIZE, desc_len as u64);
+								self.transfer_from_disk(
+									memory,
+									desc_addr,
+									blk_sector * SECTOR_SIZE,
+									desc_len as u64,
+								);
 							} else {
 								for i in 0..desc_len as u64 {
 									let data = self.read_from_disk(blk_sector * SECTOR_SIZE + i);
@@ -489,7 +568,7 @@ impl VirtioBlockDisk {
 							}
 						}
 					};
-				},
+				}
 				2 => {
 					// Third descriptor: Result status
 					if (desc_flags & VIRTQ_DESC_F_WRITE) == 0 {
@@ -499,7 +578,7 @@ impl VirtioBlockDisk {
 						panic!("Third descriptor length should be one.");
 					}
 					memory.write_byte(desc_addr, 0); // 0 means succeeded
-				},
+				}
 				_ => {}
 			};
 
@@ -514,7 +593,12 @@ impl VirtioBlockDisk {
 			panic!("Descript chain length should be three.");
 		}
 
-		memory.write_word(base_used_address.wrapping_add(4).wrapping_add((self.used_ring_index as u64 % queue_size) * 8), desc_head_index as u32);
+		memory.write_word(
+			base_used_address
+				.wrapping_add(4)
+				.wrapping_add((self.used_ring_index as u64 % queue_size) * 8),
+			desc_head_index as u32,
+		);
 
 		self.used_ring_index = self.used_ring_index.wrapping_add(1);
 		memory.write_halfword(base_used_address.wrapping_add(2), self.used_ring_index);

@@ -24,7 +24,7 @@ pub struct Uart {
 	scr: u8, // scratch,
 	thre_ip: bool,
 	interrupting: bool,
-	terminal: Box<dyn Terminal>
+	terminal: Box<dyn Terminal>,
 }
 
 impl Uart {
@@ -42,7 +42,7 @@ impl Uart {
 			scr: 0,
 			thre_ip: false,
 			interrupting: false,
-			terminal: terminal
+			terminal,
 		}
 	}
 
@@ -127,19 +127,19 @@ impl Uart {
 					self.lsr &= !LSR_DATA_AVAILABLE;
 					self.update_iir();
 					rbr
-				},
-				false => 0 // @TODO: Implement properly
+				}
+				false => 0, // @TODO: Implement properly
 			},
 			0x10000001 => match (self.lcr >> 7) == 0 {
 				true => self.ier,
-				false => 0 // @TODO: Implement properly
+				false => 0, // @TODO: Implement properly
 			},
 			0x10000002 => self.iir,
 			0x10000003 => self.lcr,
 			0x10000004 => self.mcr,
 			0x10000005 => self.lsr,
 			0x10000007 => self.scr,
-			_ => 0
+			_ => 0,
 		}
 	}
 
@@ -157,32 +157,33 @@ impl Uart {
 					self.thr = value;
 					self.lsr &= !LSR_THR_EMPTY;
 					self.update_iir();
-				},
+				}
 				false => {} // @TODO: Implement properly
 			},
 			0x10000001 => match (self.lcr >> 7) == 0 {
 				true => {
 					// This bahavior isn't written in the data sheet
 					// but some drivers seem to rely on it.
-					if (self.ier & IER_THREINT_BIT) == 0 &&
-						(value & IER_THREINT_BIT) != 0 &&
-						self.thr == 0 {
+					if (self.ier & IER_THREINT_BIT) == 0
+						&& (value & IER_THREINT_BIT) != 0
+						&& self.thr == 0
+					{
 						self.thre_ip = true;
 					}
 					self.ier = value;
 					self.update_iir();
-				},
+				}
 				false => {} // @TODO: Implement properly
 			},
 			0x10000003 => {
 				self.lcr = value;
-			},
+			}
 			0x10000004 => {
 				self.mcr = value;
-			},
+			}
 			0x10000007 => {
 				self.scr = value;
-			},
+			}
 			_ => {}
 		};
 	}

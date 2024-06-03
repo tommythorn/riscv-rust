@@ -14,12 +14,18 @@ pub struct Plic {
 	ips: [u8; 1024],
 	priorities: [u32; 1024],
 	needs_update_irq: bool,
-	virtio_ip_cache: bool
+	virtio_ip_cache: bool,
 }
 
 // @TODO: IRQ numbers should be configurable with device tree
 const VIRTIO_IRQ: u32 = 1;
 const UART_IRQ: u32 = 10;
+
+impl Default for Plic {
+	fn default() -> Self {
+		Self::new()
+	}
+}
 
 impl Plic {
 	/// Creates a new `Plic`.
@@ -32,7 +38,7 @@ impl Plic {
 			priorities: [0; 1024],
 			ips: [0; 1024],
 			needs_update_irq: false,
-			virtio_ip_cache: false
+			virtio_ip_cache: false,
 		}
 	}
 
@@ -95,11 +101,9 @@ impl Plic {
 		let mut irq = 0;
 		let mut priority = 0;
 		for i in 0..2 {
-			if ips[i] && enables[i] &&
-				priorities[i] > self.threshold &&
-				priorities[i] > priority {
-					irq = irqs[i];
-					priority = priorities[i];
+			if ips[i] && enables[i] && priorities[i] > self.threshold && priorities[i] > priority {
+				irq = irqs[i];
+				priority = priorities[i];
 			}
 		}
 
@@ -112,13 +116,13 @@ impl Plic {
 
 	fn set_ip(&mut self, irq: u32) {
 		let index = (irq >> 3) as usize;
-		self.ips[index] = self.ips[index] | (1 << irq);
+		self.ips[index] |= 1 << irq;
 		self.needs_update_irq = true;
 	}
 
 	fn clear_ip(&mut self, irq: u32) {
 		let index = (irq >> 3) as usize;
-		self.ips[index] = self.ips[index] & !(1 << irq);
+		self.ips[index] &= !(1 << irq);
 		self.needs_update_irq = true;
 	}
 
@@ -134,11 +138,11 @@ impl Plic {
 				let index = ((address - 0xc000000) >> 2) as usize;
 				let pos = offset << 3;
 				(self.priorities[index] >> pos) as u8
-			},
+			}
 			0x0c001000..=0x0c00107f => {
 				let index = (address - 0xc001000) as usize;
 				self.ips[index]
-			},
+			}
 			0x0c002080 => self.enabled as u8,
 			0x0c002081 => (self.enabled >> 8) as u8,
 			0x0c002082 => (self.enabled >> 16) as u8,
@@ -155,7 +159,7 @@ impl Plic {
 			0x0c201005 => (self.irq >> 8) as u8,
 			0x0c201006 => (self.irq >> 16) as u8,
 			0x0c201007 => (self.irq >> 24) as u8,
-			_ => 0
+			_ => 0,
 		}
 	}
 
@@ -171,55 +175,56 @@ impl Plic {
 				let offset = address % 4;
 				let index = ((address - 0xc000000) >> 2) as usize;
 				let pos = offset << 3;
-				self.priorities[index] = (self.priorities[index] & !(0xff << pos)) | ((value as u32) << pos);
+				self.priorities[index] =
+					(self.priorities[index] & !(0xff << pos)) | ((value as u32) << pos);
 				self.needs_update_irq = true;
-			},
+			}
 			// Enable. Only first 64 interrupt sources support so far.
 			// @TODO: Implement all 1024 interrupt source enables.
 			0x0c002080 => {
 				self.enabled = (self.enabled & !0xff) | (value as u64);
 				self.needs_update_irq = true;
-			},
+			}
 			0x0c002081 => {
 				self.enabled = (self.enabled & !(0xff << 8)) | ((value as u64) << 8);
-			},
+			}
 			0x0c002082 => {
 				self.enabled = (self.enabled & !(0xff << 16)) | ((value as u64) << 16);
-			},
+			}
 			0x0c002083 => {
 				self.enabled = (self.enabled & !(0xff << 24)) | ((value as u64) << 24);
-			},
+			}
 			0x0c002084 => {
 				self.enabled = (self.enabled & !(0xff << 32)) | ((value as u64) << 32);
-			},
+			}
 			0x0c002085 => {
 				self.enabled = (self.enabled & !(0xff << 40)) | ((value as u64) << 40);
-			},
+			}
 			0x0c002086 => {
 				self.enabled = (self.enabled & !(0xff << 48)) | ((value as u64) << 48);
-			},
+			}
 			0x0c002087 => {
 				self.enabled = (self.enabled & !(0xff << 56)) | ((value as u64) << 56);
-			},
+			}
 			0x0c201000 => {
 				self.threshold = (self.threshold & !0xff) | (value as u32);
 				self.needs_update_irq = true;
-			},
+			}
 			0x0c201001 => {
 				self.threshold = (self.threshold & !(0xff << 8)) | ((value as u32) << 8);
-			},
+			}
 			0x0c201002 => {
 				self.threshold = (self.threshold & !(0xff << 16)) | ((value as u32) << 16);
-			},
+			}
 			0x0c201003 => {
 				self.threshold = (self.threshold & !(0xff << 24)) | ((value as u32) << 24);
-			},
+			}
 			// Claim
 			0x0c201004 => {
 				// Assuming written data is a byte so far
 				// @TODO: Should be four bytes.
 				self.clear_ip(value as u32);
-			},
+			}
 			_ => {}
 		};
 	}
