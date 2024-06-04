@@ -89,9 +89,7 @@ impl Mmu {
 
 		// Load default device tree binary content
 		let content = include_bytes!("./device/dtb.dtb");
-		for i in 0..content.len() {
-			dtb[i] = content[i];
-		}
+                dtb[..content.len()].copy_from_slice(&content[..]);
 
 		Mmu {
 			clock: 0,
@@ -143,9 +141,7 @@ impl Mmu {
 	/// # Arguments
 	/// * `data` DTB binary content
 	pub fn init_dtb(&mut self, data: Vec<u8>) {
-		for i in 0..data.len() {
-			self.dtb[i] = data[i];
-		}
+                self.dtb[..data.len()].copy_from_slice(&data[..]);
 		for i in data.len()..self.dtb.len() {
 			self.dtb[i] = 0;
 		}
@@ -656,14 +652,7 @@ impl Mmu {
 		let effective_address = self.get_effective_address(p_address);
 		let valid = match effective_address >= DRAM_BASE {
 			true => self.memory.validate_address(effective_address),
-			false => match effective_address {
-				0x00001020..=0x00001fff => true,
-				0x02000000..=0x0200ffff => true,
-				0x0C000000..=0x0fffffff => true,
-				0x10000000..=0x100000ff => true,
-				0x10001000..=0x10001FFF => true,
-				_ => false,
-			},
+			false => matches!(effective_address, 0x00001020..=0x00001fff | 0x02000000..=0x0200ffff | 0x0C000000..=0x0fffffff | 0x10000000..=0x100000ff | 0x10001000..=0x10001FFF),
 		};
 		Ok(valid)
 	}
