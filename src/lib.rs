@@ -69,10 +69,7 @@ impl Emulator {
     /// is [`riscv-tests`](https://github.com/riscv/riscv-tests).
     /// Otherwise calls `run_program()`.
     pub fn run(&mut self) {
-        match self.is_test {
-            true => self.run_test(),
-            false => self.run_program(),
-        };
+        if self.is_test { self.run_test() } else { self.run_program() };
     }
 
     /// Runs program set by `setup_program()`. The emulator won't stop forever.

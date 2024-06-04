@@ -501,18 +501,13 @@ impl Mmu {
     /// * `p_address` Physical address
     pub fn load_word_raw(&mut self, p_address: u64) -> u32 {
         let effective_address = self.get_effective_address(p_address);
-        match effective_address >= DRAM_BASE
-            && effective_address.wrapping_add(3) > effective_address
-        {
-            // Fast path. Directly load main memory at a time.
-            true => self.memory.read_word(effective_address),
-            false => {
-                let mut data = 0_u32;
-                for i in 0..4 {
-                    data |= (self.load_raw(effective_address.wrapping_add(i)) as u32) << (i * 8)
-                }
-                data
+        if effective_address >= DRAM_BASE
+            && effective_address.wrapping_add(3) > effective_address { self.memory.read_word(effective_address) } else {
+            let mut data = 0_u32;
+            for i in 0..4 {
+                data |= (self.load_raw(effective_address.wrapping_add(i)) as u32) << (i * 8)
             }
+            data
         }
     }
 
@@ -523,18 +518,13 @@ impl Mmu {
     /// * `p_address` Physical address
     fn load_doubleword_raw(&mut self, p_address: u64) -> u64 {
         let effective_address = self.get_effective_address(p_address);
-        match effective_address >= DRAM_BASE
-            && effective_address.wrapping_add(7) > effective_address
-        {
-            // Fast path. Directly load main memory at a time.
-            true => self.memory.read_doubleword(effective_address),
-            false => {
-                let mut data = 0_u64;
-                for i in 0..8 {
-                    data |= (self.load_raw(effective_address.wrapping_add(i)) as u64) << (i * 8)
-                }
-                data
+        if effective_address >= DRAM_BASE
+            && effective_address.wrapping_add(7) > effective_address { self.memory.read_doubleword(effective_address) } else {
+            let mut data = 0_u64;
+            for i in 0..8 {
+                data |= (self.load_raw(effective_address.wrapping_add(i)) as u64) << (i * 8)
             }
+            data
         }
     }
 
@@ -547,16 +537,13 @@ impl Mmu {
     pub fn store_raw(&mut self, p_address: u64, value: u8) {
         let effective_address = self.get_effective_address(p_address);
         // @TODO: Mapping should be configurable with dtb
-        match effective_address >= DRAM_BASE {
-            true => self.memory.write_byte(effective_address, value),
-            false => match effective_address {
-                0x02000000..=0x0200ffff => self.clint.store(effective_address, value),
-                0x0c000000..=0x0fffffff => self.plic.store(effective_address, value),
-                0x10000000..=0x100000ff => self.uart.store(effective_address, value),
-                0x10001000..=0x10001FFF => self.disk.store(effective_address, value),
-                _ => panic!("Unknown memory mapping {:X}.", effective_address),
-            },
-        };
+        if effective_address >= DRAM_BASE { self.memory.write_byte(effective_address, value) } else { match effective_address {
+            0x02000000..=0x0200ffff => self.clint.store(effective_address, value),
+            0x0c000000..=0x0fffffff => self.plic.store(effective_address, value),
+            0x10000000..=0x100000ff => self.uart.store(effective_address, value),
+            0x10001000..=0x10001FFF => self.disk.store(effective_address, value),
+            _ => panic!("Unknown memory mapping {:X}.", effective_address),
+        } };
     }
 
     /// Stores two bytes to main memory or peripheral devices depending on
@@ -567,18 +554,13 @@ impl Mmu {
     /// * `value` data written
     fn store_halfword_raw(&mut self, p_address: u64, value: u16) {
         let effective_address = self.get_effective_address(p_address);
-        match effective_address >= DRAM_BASE
-            && effective_address.wrapping_add(1) > effective_address
-        {
-            // Fast path. Directly store to main memory at a time.
-            true => self.memory.write_halfword(effective_address, value),
-            false => {
-                for i in 0..2 {
-                    self.store_raw(
-                        effective_address.wrapping_add(i),
-                        ((value >> (i * 8)) & 0xff) as u8,
-                    );
-                }
+        if effective_address >= DRAM_BASE
+            && effective_address.wrapping_add(1) > effective_address { self.memory.write_halfword(effective_address, value) } else {
+            for i in 0..2 {
+                self.store_raw(
+                    effective_address.wrapping_add(i),
+                    ((value >> (i * 8)) & 0xff) as u8,
+                );
             }
         }
     }
@@ -591,18 +573,13 @@ impl Mmu {
     /// * `value` data written
     fn store_word_raw(&mut self, p_address: u64, value: u32) {
         let effective_address = self.get_effective_address(p_address);
-        match effective_address >= DRAM_BASE
-            && effective_address.wrapping_add(3) > effective_address
-        {
-            // Fast path. Directly store to main memory at a time.
-            true => self.memory.write_word(effective_address, value),
-            false => {
-                for i in 0..4 {
-                    self.store_raw(
-                        effective_address.wrapping_add(i),
-                        ((value >> (i * 8)) & 0xff) as u8,
-                    );
-                }
+        if effective_address >= DRAM_BASE
+            && effective_address.wrapping_add(3) > effective_address { self.memory.write_word(effective_address, value) } else {
+            for i in 0..4 {
+                self.store_raw(
+                    effective_address.wrapping_add(i),
+                    ((value >> (i * 8)) & 0xff) as u8,
+                );
             }
         }
     }
@@ -615,18 +592,13 @@ impl Mmu {
     /// * `value` data written
     fn store_doubleword_raw(&mut self, p_address: u64, value: u64) {
         let effective_address = self.get_effective_address(p_address);
-        match effective_address >= DRAM_BASE
-            && effective_address.wrapping_add(7) > effective_address
-        {
-            // Fast path. Directly store to main memory at a time.
-            true => self.memory.write_doubleword(effective_address, value),
-            false => {
-                for i in 0..8 {
-                    self.store_raw(
-                        effective_address.wrapping_add(i),
-                        ((value >> (i * 8)) & 0xff) as u8,
-                    );
-                }
+        if effective_address >= DRAM_BASE
+            && effective_address.wrapping_add(7) > effective_address { self.memory.write_doubleword(effective_address, value) } else {
+            for i in 0..8 {
+                self.store_raw(
+                    effective_address.wrapping_add(i),
+                    ((value >> (i * 8)) & 0xff) as u8,
+                );
             }
         }
     }
@@ -662,15 +634,12 @@ impl Mmu {
     ) -> Result<u64, ()> {
         let address = self.get_effective_address(v_address);
         let v_page = address & !0xfff;
-        let cache = match self.page_cache_enabled {
-            true => match access_type {
-                MemoryAccessType::Execute => self.fetch_page_cache.get(&v_page),
-                MemoryAccessType::Read => self.load_page_cache.get(&v_page),
-                MemoryAccessType::Write => self.store_page_cache.get(&v_page),
-                MemoryAccessType::DontCare => None,
-            },
-            false => None,
-        };
+        let cache = if self.page_cache_enabled { match access_type {
+            MemoryAccessType::Execute => self.fetch_page_cache.get(&v_page),
+            MemoryAccessType::Read => self.load_page_cache.get(&v_page),
+            MemoryAccessType::Write => self.store_page_cache.get(&v_page),
+            MemoryAccessType::DontCare => None,
+        } } else { None };
         match cache {
             Some(p_page) => Ok(p_page | (address & 0xfff)),
             None => {
@@ -747,28 +716,25 @@ impl Mmu {
                         panic!("AddressingMode SV48 is not supported yet.");
                     }
                 };
-                match self.page_cache_enabled {
-                    true => match p_address {
-                        Ok(p_address) => {
-                            let p_page = p_address & !0xfff;
-                            match access_type {
-                                MemoryAccessType::Execute => {
-                                    self.fetch_page_cache.insert(v_page, p_page)
-                                }
-                                MemoryAccessType::Read => {
-                                    self.load_page_cache.insert(v_page, p_page)
-                                }
-                                MemoryAccessType::Write => {
-                                    self.store_page_cache.insert(v_page, p_page)
-                                }
-                                MemoryAccessType::DontCare => None,
-                            };
-                            Ok(p_address)
-                        }
-                        Err(()) => Err(()),
-                    },
-                    false => p_address,
-                }
+                if self.page_cache_enabled { match p_address {
+                    Ok(p_address) => {
+                        let p_page = p_address & !0xfff;
+                        match access_type {
+                            MemoryAccessType::Execute => {
+                                self.fetch_page_cache.insert(v_page, p_page)
+                            }
+                            MemoryAccessType::Read => {
+                                self.load_page_cache.insert(v_page, p_page)
+                            }
+                            MemoryAccessType::Write => {
+                                self.store_page_cache.insert(v_page, p_page)
+                            }
+                            MemoryAccessType::DontCare => None,
+                        };
+                        Ok(p_address)
+                    }
+                    Err(()) => Err(()),
+                } } else { p_address }
             }
         }
     }

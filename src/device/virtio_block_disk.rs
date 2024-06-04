@@ -526,45 +526,42 @@ impl VirtioBlockDisk {
                 }
                 1 => {
                     // Second descriptor: Read/Write disk
-                    match (desc_flags & VIRTQ_DESC_F_WRITE) == 0 {
-                        true => {
-                            // write to disk
-                            if (desc_addr % 8) == 0
-                                && ((blk_sector * SECTOR_SIZE) % 8) == 0
-                                && (desc_len % 8) == 0
-                            {
-                                // Enter fast path if possible
-                                self.transfer_to_disk(
-                                    memory,
-                                    desc_addr,
-                                    blk_sector * SECTOR_SIZE,
-                                    desc_len as u64,
-                                );
-                            } else {
-                                for i in 0..desc_len as u64 {
-                                    let data = memory.read_byte(desc_addr + i);
-                                    self.write_to_disk(blk_sector * SECTOR_SIZE + i, data);
-                                }
+                    if (desc_flags & VIRTQ_DESC_F_WRITE) == 0 {
+                        // write to disk
+                        if (desc_addr % 8) == 0
+                            && ((blk_sector * SECTOR_SIZE) % 8) == 0
+                            && (desc_len % 8) == 0
+                        {
+                            // Enter fast path if possible
+                            self.transfer_to_disk(
+                                memory,
+                                desc_addr,
+                                blk_sector * SECTOR_SIZE,
+                                desc_len as u64,
+                            );
+                        } else {
+                            for i in 0..desc_len as u64 {
+                                let data = memory.read_byte(desc_addr + i);
+                                self.write_to_disk(blk_sector * SECTOR_SIZE + i, data);
                             }
                         }
-                        false => {
-                            // read from disk
-                            if (desc_addr % 8) == 0
-                                && ((blk_sector * SECTOR_SIZE) % 8) == 0
-                                && (desc_len % 8) == 0
-                            {
-                                // Enter fast path if possible
-                                self.transfer_from_disk(
-                                    memory,
-                                    desc_addr,
-                                    blk_sector * SECTOR_SIZE,
-                                    desc_len as u64,
-                                );
-                            } else {
-                                for i in 0..desc_len as u64 {
-                                    let data = self.read_from_disk(blk_sector * SECTOR_SIZE + i);
-                                    memory.write_byte(desc_addr + i, data);
-                                }
+                    } else {
+                        // read from disk
+                        if (desc_addr % 8) == 0
+                            && ((blk_sector * SECTOR_SIZE) % 8) == 0
+                            && (desc_len % 8) == 0
+                        {
+                            // Enter fast path if possible
+                            self.transfer_from_disk(
+                                memory,
+                                desc_addr,
+                                blk_sector * SECTOR_SIZE,
+                                desc_len as u64,
+                            );
+                        } else {
+                            for i in 0..desc_len as u64 {
+                                let data = self.read_from_disk(blk_sector * SECTOR_SIZE + i);
+                                memory.write_byte(desc_addr + i, data);
                             }
                         }
                     };

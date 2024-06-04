@@ -308,15 +308,12 @@ impl Cpu {
             Err(e) => return Err(e),
         };
         let instruction_address = self.pc;
-        let word = match (original_word & 0x3) == 0x3 {
-            true => {
-                self.pc = self.pc.wrapping_add(4); // 32-bit length non-compressed instruction
-                original_word
-            }
-            false => {
-                self.pc = self.pc.wrapping_add(2); // 16-bit length compressed instruction
-                self.uncompress(original_word & 0xffff)
-            }
+        let word = if (original_word & 0x3) == 0x3 {
+            self.pc = self.pc.wrapping_add(4); // 32-bit length non-compressed instruction
+            original_word
+        } else {
+            self.pc = self.pc.wrapping_add(2); // 16-bit length compressed instruction
+            self.uncompress(original_word & 0xffff)
         };
 
         match self.decode(word) {
@@ -494,23 +491,11 @@ impl Cpu {
 
         // First, determine which privilege mode should handle the trap.
         // @TODO: Check if this logic is correct
-        let mdeleg = match is_interrupt {
-            true => self.read_csr_raw(CSR_MIDELEG_ADDRESS),
-            false => self.read_csr_raw(CSR_MEDELEG_ADDRESS),
-        };
-        let sdeleg = match is_interrupt {
-            true => self.read_csr_raw(CSR_SIDELEG_ADDRESS),
-            false => self.read_csr_raw(CSR_SEDELEG_ADDRESS),
-        };
+        let mdeleg = if is_interrupt { self.read_csr_raw(CSR_MIDELEG_ADDRESS) } else { self.read_csr_raw(CSR_MEDELEG_ADDRESS) };
+        let sdeleg = if is_interrupt { self.read_csr_raw(CSR_SIDELEG_ADDRESS) } else { self.read_csr_raw(CSR_SEDELEG_ADDRESS) };
         let pos = cause & 0xffff;
 
-        let new_privilege_mode = match ((mdeleg >> pos) & 1) == 0 {
-            true => PrivilegeMode::Machine,
-            false => match ((sdeleg >> pos) & 1) == 0 {
-                true => PrivilegeMode::Supervisor,
-                false => PrivilegeMode::User,
-            },
-        };
+        let new_privilege_mode = if ((mdeleg >> pos) & 1) == 0 { PrivilegeMode::Machine } else if ((sdeleg >> pos) & 1) == 0 { PrivilegeMode::Supervisor } else { PrivilegeMode::User };
         let new_privilege_encoding = get_privilege_encoding(&new_privilege_mode) as u64;
 
         let current_status = match self.privilege_mode {
@@ -712,36 +697,30 @@ impl Cpu {
     }
 
     fn read_csr(&mut self, address: u16) -> Result<u64, Trap> {
-        match self.has_csr_access_privilege(address) {
-            true => Ok(self.read_csr_raw(address)),
-            false => Err(Trap {
-                trap_type: TrapType::IllegalInstruction,
-                value: self.pc.wrapping_sub(4), // @TODO: Is this always correct?
-            }),
-        }
+        if self.has_csr_access_privilege(address) { Ok(self.read_csr_raw(address)) } else { Err(Trap {
+            trap_type: TrapType::IllegalInstruction,
+            value: self.pc.wrapping_sub(4), // @TODO: Is this always correct?
+        }) }
     }
 
     fn write_csr(&mut self, address: u16, value: u64) -> Result<(), Trap> {
-        match self.has_csr_access_privilege(address) {
-            true => {
-                /*
-                // Checking writability fails some tests so disabling so far
-                let read_only = ((address >> 10) & 0x3) == 0x3;
-                if read_only {
-                        return Err(Exception::IllegalInstruction);
-                }
-                */
-                self.write_csr_raw(address, value);
-                if address == CSR_SATP_ADDRESS {
-                    self.update_addressing_mode(value);
-                }
-                Ok(())
+        if self.has_csr_access_privilege(address) {
+            /*
+            // Checking writability fails some tests so disabling so far
+            let read_only = ((address >> 10) & 0x3) == 0x3;
+            if read_only {
+                    return Err(Exception::IllegalInstruction);
             }
-            false => Err(Trap {
-                trap_type: TrapType::IllegalInstruction,
-                value: self.pc.wrapping_sub(4), // @TODO: Is this always correct?
-            }),
-        }
+            */
+            self.write_csr_raw(address, value);
+            if address == CSR_SATP_ADDRESS {
+                self.update_addressing_mode(value);
+            }
+            Ok(())
+        } else { Err(Trap {
+            trap_type: TrapType::IllegalInstruction,
+            value: self.pc.wrapping_sub(4), // @TODO: Is this always correct?
+        }) }
     }
 
     // SSTATUS, SIE, and SIP are subsets of MSTATUS, MIE, and MIP
@@ -1401,12 +1380,9 @@ impl Cpu {
             }
         };
 
-        let word = match (original_word & 0x3) == 0x3 {
-            true => original_word,
-            false => {
-                original_word &= 0xffff;
-                self.uncompress(original_word)
-            }
+        let word = if (original_word & 0x3) == 0x3 { original_word } else {
+            original_word &= 0xffff;
+            self.uncompress(original_word)
         };
 
         let inst = {
@@ -1927,10 +1903,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
                 Ok(data) => data,
                 Err(e) => return Err(e),
             };
-            let max = match cpu.x[f.rs2] as u64 >= tmp {
-                true => cpu.x[f.rs2] as u64,
-                false => tmp,
-            };
+            let max = if cpu.x[f.rs2] as u64 >= tmp { cpu.x[f.rs2] as u64 } else { tmp };
             match cpu.mmu.store_doubleword(cpu.x[f.rs1] as u64, max) {
                 Ok(()) => {}
                 Err(e) => return Err(e),
@@ -1950,10 +1923,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
                 Ok(data) => data,
                 Err(e) => return Err(e),
             };
-            let max = match cpu.x[f.rs2] as u32 >= tmp {
-                true => cpu.x[f.rs2] as u32,
-                false => tmp,
-            };
+            let max = if cpu.x[f.rs2] as u32 >= tmp { cpu.x[f.rs2] as u32 } else { tmp };
             match cpu.mmu.store_word(cpu.x[f.rs1] as u64, max) {
                 Ok(()) => {}
                 Err(e) => return Err(e),
@@ -2504,10 +2474,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "FEQ.D",
         operation: |cpu, word, _address| {
             let f = parse_format_r(word);
-            cpu.x[f.rd] = match cpu.f[f.rs1] == cpu.f[f.rs2] {
-                true => 1,
-                false => 0,
-            };
+            cpu.x[f.rd] = if cpu.f[f.rs1] == cpu.f[f.rs2] { 1 } else { 0 };
             Ok(())
         },
         disassemble: dump_empty,
@@ -2535,10 +2502,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "FLE.D",
         operation: |cpu, word, _address| {
             let f = parse_format_r(word);
-            cpu.x[f.rd] = match cpu.f[f.rs1] <= cpu.f[f.rs2] {
-                true => 1,
-                false => 0,
-            };
+            cpu.x[f.rd] = if cpu.f[f.rs1] <= cpu.f[f.rs2] { 1 } else { 0 };
             Ok(())
         },
         disassemble: dump_format_r,
@@ -2549,10 +2513,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "FLT.D",
         operation: |cpu, word, _address| {
             let f = parse_format_r(word);
-            cpu.x[f.rd] = match cpu.f[f.rs1] < cpu.f[f.rs2] {
-                true => 1,
-                false => 0,
-            };
+            cpu.x[f.rd] = if cpu.f[f.rs1] < cpu.f[f.rs2] { 1 } else { 0 };
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3125,19 +3086,16 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, word, _address| {
             let f = parse_format_r(word);
             // @TODO: Implement properly
-            cpu.x[f.rd] = match cpu.is_reservation_set && cpu.reservation == (cpu.x[f.rs1] as u64) {
-                true => match cpu
-                    .mmu
-                    .store_doubleword(cpu.x[f.rs1] as u64, cpu.x[f.rs2] as u64)
-                {
-                    Ok(()) => {
-                        cpu.is_reservation_set = false;
-                        0
-                    }
-                    Err(e) => return Err(e),
-                },
-                false => 1,
-            };
+            cpu.x[f.rd] = if cpu.is_reservation_set && cpu.reservation == (cpu.x[f.rs1] as u64) { match cpu
+                .mmu
+                .store_doubleword(cpu.x[f.rs1] as u64, cpu.x[f.rs2] as u64)
+            {
+                Ok(()) => {
+                    cpu.is_reservation_set = false;
+                    0
+                }
+                Err(e) => return Err(e),
+            } } else { 1 };
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3149,16 +3107,13 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, word, _address| {
             let f = parse_format_r(word);
             // @TODO: Implement properly
-            cpu.x[f.rd] = match cpu.is_reservation_set && cpu.reservation == (cpu.x[f.rs1] as u64) {
-                true => match cpu.mmu.store_word(cpu.x[f.rs1] as u64, cpu.x[f.rs2] as u32) {
-                    Ok(()) => {
-                        cpu.is_reservation_set = false;
-                        0
-                    }
-                    Err(e) => return Err(e),
-                },
-                false => 1,
-            };
+            cpu.x[f.rd] = if cpu.is_reservation_set && cpu.reservation == (cpu.x[f.rs1] as u64) { match cpu.mmu.store_word(cpu.x[f.rs1] as u64, cpu.x[f.rs2] as u32) {
+                Ok(()) => {
+                    cpu.is_reservation_set = false;
+                    0
+                }
+                Err(e) => return Err(e),
+            } } else { 1 };
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3251,10 +3206,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SLT",
         operation: |cpu, word, _address| {
             let f = parse_format_r(word);
-            cpu.x[f.rd] = match cpu.x[f.rs1] < cpu.x[f.rs2] {
-                true => 1,
-                false => 0,
-            };
+            cpu.x[f.rd] = if cpu.x[f.rs1] < cpu.x[f.rs2] { 1 } else { 0 };
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3265,10 +3217,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SLTI",
         operation: |cpu, word, _address| {
             let f = parse_format_i(word);
-            cpu.x[f.rd] = match cpu.x[f.rs1] < f.imm {
-                true => 1,
-                false => 0,
-            };
+            cpu.x[f.rd] = if cpu.x[f.rs1] < f.imm { 1 } else { 0 };
             Ok(())
         },
         disassemble: dump_format_i,
@@ -3279,10 +3228,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SLTIU",
         operation: |cpu, word, _address| {
             let f = parse_format_i(word);
-            cpu.x[f.rd] = match cpu.unsigned_data(cpu.x[f.rs1]) < cpu.unsigned_data(f.imm) {
-                true => 1,
-                false => 0,
-            };
+            cpu.x[f.rd] = if cpu.unsigned_data(cpu.x[f.rs1]) < cpu.unsigned_data(f.imm) { 1 } else { 0 };
             Ok(())
         },
         disassemble: dump_format_i,
@@ -3293,10 +3239,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SLTU",
         operation: |cpu, word, _address| {
             let f = parse_format_r(word);
-            cpu.x[f.rd] = match cpu.unsigned_data(cpu.x[f.rs1]) < cpu.unsigned_data(cpu.x[f.rs2]) {
-                true => 1,
-                false => 0,
-            };
+            cpu.x[f.rd] = if cpu.unsigned_data(cpu.x[f.rs1]) < cpu.unsigned_data(cpu.x[f.rs2]) { 1 } else { 0 };
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3570,14 +3513,8 @@ impl DecodeCache {
         // Initialize linked list
         let mut entries = Vec::new();
         for i in 0..DECODE_CACHE_ENTRY_NUM {
-            let next_index = match i == DECODE_CACHE_ENTRY_NUM - 1 {
-                true => NULL_ENTRY,
-                false => i + 1,
-            };
-            let prev_index = match i == 0 {
-                true => NULL_ENTRY,
-                false => i - 1,
-            };
+            let next_index = if i == DECODE_CACHE_ENTRY_NUM - 1 { NULL_ENTRY } else { i + 1 };
+            let prev_index = if i == 0 { NULL_ENTRY } else { i - 1 };
             entries.push(DecodeCacheEntry::new(next_index, prev_index));
         }
 
@@ -4066,10 +4003,7 @@ mod test_decode_cache {
         };
 
         // Cache miss test
-        match cache.get(2) {
-            Some(_index) => panic!("Unexpected cache hit"),
-            None => {}
-        };
+        if let Some(_index) = cache.get(2) { panic!("Unexpected cache hit") };
     }
 
     #[test]
@@ -4087,17 +4021,11 @@ mod test_decode_cache {
         }
 
         // The oldest entry should have been removed because of the overflow
-        match cache.get(0) {
-            Some(_index) => panic!("Unexpected cache hit"),
-            None => {}
-        };
+        if let Some(_index) = cache.get(0) { panic!("Unexpected cache hit") };
 
         // With this .get(), the entry with the word "1" moves to the tail of the list
         // and the entry with the word "2" becomes the oldest entry.
-        match cache.get(1) {
-            Some(index) => assert_eq!(2, index),
-            None => {}
-        };
+        if let Some(index) = cache.get(1) { assert_eq!(2, index) };
 
         // The oldest entry with the word "2" will be removed due to the overflow
         cache.insert(
@@ -4105,9 +4033,6 @@ mod test_decode_cache {
             DECODE_CACHE_ENTRY_NUM + 2,
         );
 
-        match cache.get(2) {
-            Some(_index) => panic!("Unexpected cache hit"),
-            None => {}
-        };
+        if let Some(_index) = cache.get(2) { panic!("Unexpected cache hit") };
     }
 }
