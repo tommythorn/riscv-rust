@@ -502,9 +502,9 @@ impl ElfAnalyzer {
 		symbol_table_section_headers: &Vec<&SectionHeader>,
 	) -> Vec<SymbolEntry> {
 		let mut entries = Vec::new();
-		for i in 0..symbol_table_section_headers.len() {
-			let sh_offset = symbol_table_section_headers[i].sh_offset;
-			let sh_size = symbol_table_section_headers[i].sh_size;
+		for h in symbol_table_section_headers {
+			let sh_offset = h.sh_offset;
+			let sh_size = h.sh_size;
 
 			let mut offset = sh_offset as usize;
 
