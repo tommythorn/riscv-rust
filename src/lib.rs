@@ -156,11 +156,11 @@ impl Emulator {
 		let mut symbol_table_section_headers = vec![];
 		let mut string_table_section_headers = vec![];
 
-		for i in 0..section_headers.len() {
-			match section_headers[i].sh_type {
-				1 => program_data_section_headers.push(&section_headers[i]),
-				2 => symbol_table_section_headers.push(&section_headers[i]),
-				3 => string_table_section_headers.push(&section_headers[i]),
+		for sh in section_headers.iter() {
+			match sh.sh_type {
+				1 => program_data_section_headers.push(sh),
+				2 => symbol_table_section_headers.push(sh),
+				3 => string_table_section_headers.push(sh),
 				_ => {}
 			};
 		}
@@ -199,10 +199,10 @@ impl Emulator {
 			self.cpu.get_mut_mmu().init_memory(PROGRAM_MEMORY_CAPACITY);
 		}
 
-		for i in 0..program_data_section_headers.len() {
-			let sh_addr = program_data_section_headers[i].sh_addr;
-			let sh_offset = program_data_section_headers[i].sh_offset as usize;
-			let sh_size = program_data_section_headers[i].sh_size as usize;
+		for sh in program_data_section_headers {
+			let sh_addr = sh.sh_addr;
+			let sh_offset = sh.sh_offset as usize;
+			let sh_size = sh.sh_size as usize;
 			if sh_addr >= 0x80000000 && sh_offset > 0 && sh_size > 0 {
 				for j in 0..sh_size {
 					self.cpu
@@ -233,11 +233,11 @@ impl Emulator {
 		let mut symbol_table_section_headers = vec![];
 		let mut string_table_section_headers = vec![];
 
-		for i in 0..section_headers.len() {
-			match section_headers[i].sh_type {
-				1 => program_data_section_headers.push(&section_headers[i]),
-				2 => symbol_table_section_headers.push(&section_headers[i]),
-				3 => string_table_section_headers.push(&section_headers[i]),
+		for sh in section_headers.iter() {
+			match sh.sh_type {
+				1 => program_data_section_headers.push(sh),
+				2 => symbol_table_section_headers.push(sh),
+				3 => string_table_section_headers.push(sh),
 				_ => {}
 			};
 		}
