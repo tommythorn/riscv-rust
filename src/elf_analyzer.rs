@@ -625,21 +625,17 @@ impl ElfAnalyzer {
 		string_table_section_header: &SectionHeader,
 	) -> FnvHashMap<String, u64> {
 		let mut map = FnvHashMap::default();
-		for i in 0..entries.len() {
-			let st_info = entries[i].st_info;
-			let st_name = entries[i].st_name;
-			let st_value = entries[i].st_value;
-
+		for st in entries {
 			// Stores only function and notype symbol
-			if (st_info & 0x2) != 0x2 && (st_info & 0xf) != 0 {
+			if (st.st_info & 0x2) != 0x2 && (st.st_info & 0xf) != 0 {
 				continue;
 			}
 
-			let symbol = self.read_strings(string_table_section_header, st_name as u64);
+			let symbol = self.read_strings(string_table_section_header, st.st_name as u64);
 
 			if !symbol.is_empty() {
-				//println!("{} {:0x}", symbol, st_value);
-				map.insert(symbol, st_value);
+				//println!("{} {:0x}", symbol, st.st_value);
+				map.insert(symbol, st.st_value);
 			}
 		}
 		map
@@ -657,15 +653,15 @@ impl ElfAnalyzer {
 		string_table_section_headers: &Vec<&SectionHeader>,
 	) -> Option<u64> {
 		let tohost_values = [0x2e, 0x74, 0x6f, 0x68, 0x6f, 0x73, 0x74, 0x00]; // ".tohost\null"
-		for i in 0..program_data_section_headers.len() {
-			let sh_addr = program_data_section_headers[i].sh_addr;
-			let sh_name = program_data_section_headers[i].sh_name as u64;
+		for sh in program_data_section_headers {
+			let sh_addr = sh.sh_addr;
+			let sh_name = sh.sh_name as u64;
 			// Find all string sections so far.
 			// @TODO: Is there a way to know which string table section
 			//        sh_name of program data section points to?
-			for j in 0..string_table_section_headers.len() {
-				let sh_offset = string_table_section_headers[j].sh_offset;
-				let sh_size = string_table_section_headers[j].sh_size;
+			for sh in string_table_section_headers {
+				let sh_offset = sh.sh_offset;
+				let sh_size = sh.sh_size;
 				let mut found = true;
 				for k in 0..tohost_values.len() as u64 {
 					let addr = sh_offset + sh_name + k;
