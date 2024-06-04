@@ -549,7 +549,8 @@ impl Cpu {
 
 			if new_privilege_encoding < current_privilege_encoding {
 				return false;
-			} else if current_privilege_encoding == new_privilege_encoding {
+			}
+			if current_privilege_encoding == new_privilege_encoding {
 				match self.privilege_mode {
 					PrivilegeMode::Machine => {
 						if current_mie == 0 {
