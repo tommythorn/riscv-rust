@@ -241,29 +241,26 @@ impl Mmu {
     /// * `v_address` Virtual address
     pub fn fetch_word(&mut self, v_address: u64) -> Result<u32, Trap> {
         let width = 4;
-        match (v_address & 0xfff) <= (0x1000 - width) {
-            true => {
-                // Fast path. All bytes fetched are in the same page so
-                // translating an address only once.
-                let effective_address = self.get_effective_address(v_address);
-                match self.translate_address(effective_address, &MemoryAccessType::Execute) {
-                    Ok(p_address) => Ok(self.load_word_raw(p_address)),
-                    Err(()) => Err(Trap {
-                        trap_type: TrapType::InstructionPageFault,
-                        value: effective_address,
-                    }),
-                }
+        if v_address & 0xfff <= 0x1000 - width {
+            // Fast path. All bytes fetched are in the same page so
+            // translating an address only once.
+            let effective_address = self.get_effective_address(v_address);
+            match self.translate_address(effective_address, &MemoryAccessType::Execute) {
+                Ok(p_address) => Ok(self.load_word_raw(p_address)),
+                Err(()) => Err(Trap {
+                    trap_type: TrapType::InstructionPageFault,
+                    value: effective_address,
+                }),
             }
-            false => {
-                let mut data = 0_u32;
-                for i in 0..width {
-                    match self.fetch(v_address.wrapping_add(i)) {
-                        Ok(byte) => data |= (byte as u32) << (i * 8),
-                        Err(e) => return Err(e),
-                    };
-                }
-                Ok(data)
+        } else {
+            let mut data = 0_u32;
+            for i in 0..width {
+                match self.fetch(v_address.wrapping_add(i)) {
+                    Ok(byte) => data |= (byte as u32) << (i * 8),
+                    Err(e) => return Err(e),
+                };
             }
+            Ok(data)
         }
     }
 
@@ -295,8 +292,8 @@ impl Mmu {
             "Width must be 1, 2, 4, or 8. {:X}",
             width
         );
-        match (v_address & 0xfff) <= (0x1000 - width) {
-            true => match self.translate_address(v_address, &MemoryAccessType::Read) {
+        if v_address & 0xfff <= 0x1000 - width {
+            match self.translate_address(v_address, &MemoryAccessType::Read) {
                 Ok(p_address) => {
                     // Fast path. All bytes fetched are in the same page so
                     // translating an address only once.
@@ -312,17 +309,16 @@ impl Mmu {
                     trap_type: TrapType::LoadPageFault,
                     value: v_address,
                 }),
-            },
-            false => {
-                let mut data = 0_u64;
-                for i in 0..width {
-                    match self.load(v_address.wrapping_add(i)) {
-                        Ok(byte) => data |= (byte as u64) << (i * 8),
-                        Err(e) => return Err(e),
-                    };
-                }
-                Ok(data)
             }
+        } else {
+            let mut data = 0_u64;
+            for i in 0..width {
+                match self.load(v_address.wrapping_add(i)) {
+                    Ok(byte) => data |= (byte as u64) << (i * 8),
+                    Err(e) => return Err(e),
+                };
+            }
+            Ok(data)
         }
     }
 
@@ -394,8 +390,8 @@ impl Mmu {
             "Width must be 1, 2, 4, or 8. {:X}",
             width
         );
-        match (v_address & 0xfff) <= (0x1000 - width) {
-            true => match self.translate_address(v_address, &MemoryAccessType::Write) {
+        if v_address & 0xfff <= 0x1000 - width {
+            match self.translate_address(v_address, &MemoryAccessType::Write) {
                 Ok(p_address) => {
                     // Fast path. All bytes fetched are in the same page so
                     // translating an address only once.
@@ -412,16 +408,15 @@ impl Mmu {
                     trap_type: TrapType::StorePageFault,
                     value: v_address,
                 }),
-            },
-            false => {
-                for i in 0..width {
-                    match self.store(v_address.wrapping_add(i), ((value >> (i * 8)) & 0xff) as u8) {
-                        Ok(()) => {}
-                        Err(e) => return Err(e),
-                    }
-                }
-                Ok(())
             }
+        } else {
+            for i in 0..width {
+                match self.store(v_address.wrapping_add(i), ((value >> (i * 8)) & 0xff) as u8) {
+                    Ok(()) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(())
         }
     }
 
@@ -463,9 +458,10 @@ impl Mmu {
     fn load_raw(&mut self, p_address: u64) -> u8 {
         let effective_address = self.get_effective_address(p_address);
         // @TODO: Mapping should be configurable with dtb
-        match effective_address >= DRAM_BASE {
-            true => self.memory.read_byte(effective_address),
-            false => match effective_address {
+        if effective_address >= DRAM_BASE {
+            self.memory.read_byte(effective_address)
+        } else {
+            match effective_address {
                 // I don't know why but dtb data seems to be stored from 0x1020 on Linux.
                 // It might be from self.x[0xb] initialization?
                 // And DTB size is arbitray.
@@ -475,7 +471,7 @@ impl Mmu {
                 0x10000000..=0x100000ff => self.uart.load(effective_address),
                 0x10001000..=0x10001FFF => self.disk.load(effective_address),
                 _ => panic!("Unknown memory mapping {:X}.", effective_address),
-            },
+            }
         }
     }
 
@@ -486,18 +482,15 @@ impl Mmu {
     /// * `p_address` Physical address
     fn load_halfword_raw(&mut self, p_address: u64) -> u16 {
         let effective_address = self.get_effective_address(p_address);
-        match effective_address >= DRAM_BASE
-            && effective_address.wrapping_add(1) > effective_address
-        {
+        if effective_address >= DRAM_BASE && effective_address.wrapping_add(1) > effective_address {
             // Fast path. Directly load main memory at a time.
-            true => self.memory.read_halfword(effective_address),
-            false => {
-                let mut data = 0_u16;
-                for i in 0..2 {
-                    data |= (self.load_raw(effective_address.wrapping_add(i)) as u16) << (i * 8)
-                }
-                data
+            self.memory.read_halfword(effective_address)
+        } else {
+            let mut data = 0_u16;
+            for i in 0..2 {
+                data |= (self.load_raw(effective_address.wrapping_add(i)) as u16) << (i * 8)
             }
+            data
         }
     }
 
@@ -650,11 +643,14 @@ impl Mmu {
             Err(()) => return Err(()),
         };
         let effective_address = self.get_effective_address(p_address);
-        let valid = match effective_address >= DRAM_BASE {
-            true => self.memory.validate_address(effective_address),
-            false => {
-                matches!(effective_address, 0x00001020..=0x00001fff | 0x02000000..=0x0200ffff | 0x0C000000..=0x0fffffff | 0x10000000..=0x100000ff | 0x10001000..=0x10001FFF)
-            }
+        let valid = if effective_address >= DRAM_BASE {
+            self.memory.validate_address(effective_address)
+        } else {
+            matches!(effective_address, 0x00001020..=0x00001fff |
+		     0x02000000..=0x0200ffff |
+		     0x0C000000..=0x0fffffff |
+		     0x10000000..=0x100000ff |
+		     0x10001000..=0x10001FFF)
         };
         Ok(valid)
     }

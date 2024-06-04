@@ -57,7 +57,7 @@ fn main() -> std::io::Result<()> {
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(f) => {
-            println!("{}", f.to_string());
+            println!("{}", f);
             print_usage(&program, opts);
             // @TODO: throw error?
             return Ok(());
