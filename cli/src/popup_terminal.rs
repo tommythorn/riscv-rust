@@ -19,7 +19,7 @@ impl PopupTerminal {
 		noecho();
 		curs_set(0);
 		PopupTerminal {
-			window: window,
+			window,
 			in_escape_sequence: false,
 		}
 	}
@@ -29,10 +29,8 @@ impl Terminal for PopupTerminal {
 	fn put_byte(&mut self, value: u8) {
 		// Cutting off escape sequence so far
 		// @TODO: Implement properly
-		if !self.in_escape_sequence {
-			if value == 0x1b {
-				self.in_escape_sequence = true;
-			}
+		if !self.in_escape_sequence && value == 0x1b {
+			self.in_escape_sequence = true;
 		}
 		if self.in_escape_sequence {
 			if value == 0x6d {
