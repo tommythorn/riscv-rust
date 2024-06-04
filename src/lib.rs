@@ -123,8 +123,8 @@ impl Emulator {
 	/// # Arguments
 	/// * `bytes`
 	fn put_bytes_to_terminal(&mut self, bytes: &[u8]) {
-		for i in 0..bytes.len() {
-			self.cpu.get_mut_terminal().put_byte(bytes[i]);
+		for b in bytes {
+			self.cpu.get_mut_terminal().put_byte(*b);
 		}
 	}
 
