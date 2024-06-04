@@ -368,8 +368,7 @@ impl Cpu {
 	/// # Arguments
 	/// * `word` word instruction data decoded
 	fn decode_and_get_instruction_index(&self, word: u32) -> Result<usize, ()> {
-		for i in 0..INSTRUCTION_NUM {
-			let inst = &INSTRUCTIONS[i];
+		for (i, inst) in INSTRUCTIONS.iter().enumerate() {
 			if (word & inst.mask) == inst.data {
 				return Ok(i);
 			}
