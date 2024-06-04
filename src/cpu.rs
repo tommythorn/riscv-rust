@@ -3802,10 +3802,7 @@ mod test_cpu {
             Err(_e) => panic!("Failed to decode"),
         };
         // .decode() returns error for invalid word data.
-        match cpu.decode(0x0) {
-            Ok(_inst) => panic!("Unexpectedly succeeded in decoding"),
-            Err(()) => assert!(true),
-        };
+        assert!(cpu.decode(0x0).is_err(), "Unexpectedly succeeded in decoding");
         // @TODO: Should I test all instructions?
     }
 
