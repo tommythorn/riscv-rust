@@ -83,7 +83,7 @@ impl VirtioBlockDisk {
 		for _i in 0..((contents.len() + 7) / 8) {
 			self.contents.push(0);
 		}
-		for (i,item) in contents.iter().enumerate() {
+		for (i, item) in contents.iter().enumerate() {
 			let index = i >> 3;
 			let pos = (i % 8) * 8;
 			self.contents[index] =
