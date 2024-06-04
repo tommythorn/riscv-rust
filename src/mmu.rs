@@ -608,21 +608,19 @@ impl Mmu {
     ///
     /// # Arguments
     /// * `v_address` Virtual address
+    #[allow(clippy::result_unit_err)] // @TODO: broken mess of Result usage
     pub fn validate_address(&mut self, v_address: u64) -> Result<bool, ()> {
         // @TODO: Support other access types?
-        let p_address = match self.translate_address(v_address, &MemoryAccessType::DontCare) {
-            Ok(address) => address,
-            Err(()) => return Err(()),
-        };
+        let p_address = self.translate_address(v_address, &MemoryAccessType::DontCare)?;
         let effective_address = self.get_effective_address(p_address);
         let valid = if effective_address >= DRAM_BASE {
             self.memory.validate_address(effective_address)
         } else {
             matches!(effective_address, 0x00001020..=0x00001fff |
 		     0x02000000..=0x0200ffff |
-		     0x0C000000..=0x0fffffff |
+		     0x0c000000..=0x0fffffff |
 		     0x10000000..=0x100000ff |
-		     0x10001000..=0x10001FFF)
+		     0x10001000..=0x10001fff)
         };
         Ok(valid)
     }
