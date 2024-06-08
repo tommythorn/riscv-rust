@@ -1,7 +1,8 @@
 [package]
 name = "riscv_emu_rust_cli"
 version = "0.1.0"
-authors = ["Takahiro"]
+authors = ["Takahiro", "Tommy Thorn <tommy-github2@thorn.ws>"]
+edition = "2021"
 
 [dependencies]
 getopts = "0.2"

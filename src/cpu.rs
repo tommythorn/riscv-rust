@@ -2,8 +2,8 @@ extern crate fnv;
 
 use self::fnv::FnvHashMap;
 
-use mmu::{AddressingMode, Mmu};
-use terminal::Terminal;
+use crate::mmu::{AddressingMode, Mmu};
+use crate::terminal::Terminal;
 
 const CSR_CAPACITY: usize = 4096;
 
@@ -3639,8 +3639,8 @@ impl DecodeCacheEntry {
 #[cfg(test)]
 mod test_cpu {
     use super::*;
-    use mmu::DRAM_BASE;
-    use terminal::DummyTerminal;
+    use crate::mmu::DRAM_BASE;
+    use crate::terminal::DummyTerminal;
 
     fn create_cpu() -> Cpu {
         Cpu::new(Box::new(DummyTerminal::new()))

@@ -14,9 +14,9 @@ pub mod memory;
 pub mod mmu;
 pub mod terminal;
 
-use cpu::{Cpu, Xlen};
-use elf_analyzer::ElfAnalyzer;
-use terminal::Terminal;
+use crate::cpu::{Cpu, Xlen};
+use crate::elf_analyzer::ElfAnalyzer;
+use crate::terminal::Terminal;
 
 /// RISC-V emulator. It emulates RISC-V CPU and peripheral devices.
 ///
@@ -316,7 +316,7 @@ impl Emulator {
 #[cfg(test)]
 mod test_emulator {
     use super::*;
-    use terminal::DummyTerminal;
+    use crate::terminal::DummyTerminal;
 
     fn create_emu() -> Emulator {
         Emulator::new(Box::new(DummyTerminal::new()))

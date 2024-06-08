@@ -1,4 +1,4 @@
-use terminal::Terminal;
+use crate::terminal::Terminal;
 
 /// Standard `Terminal`.
 pub struct DefaultTerminal {
