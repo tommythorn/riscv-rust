@@ -5,6 +5,7 @@ authors = ["Takahiro", "Tommy Thorn <tommy-github2@thorn.ws>"]
 edition = "2021"
 
 [dependencies]
+libc = "0.2.155"
+termios = "0.3.3"
 getopts = "0.2"
-pancurses = "0.16.1"
 riscv_emu_rust = {path = "../"}
