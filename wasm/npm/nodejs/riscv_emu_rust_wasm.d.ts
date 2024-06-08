@@ -150,25 +150,25 @@ export class WasmRiscv {
 *   * 1: Page fault
 *   * 2: Invalid address (e.g. translated physical address points to out
 *        of valid memory address range)
-* @param {BigInt} address
+* @param {bigint} address
 * @param {Uint8Array} error
-* @returns {BigInt}
+* @returns {bigint}
 */
-  load_doubleword(address: BigInt, error: Uint8Array): BigInt;
+  load_doubleword(address: bigint, error: Uint8Array): bigint;
 /**
 * Reads integer register content.
 *
 * # Arguments
 * * `reg` register number. Must be 0-31.
 * @param {number} reg
-* @returns {BigInt}
+* @returns {bigint}
 */
-  read_register(reg: number): BigInt;
+  read_register(reg: number): bigint;
 /**
 * Reads Program Counter content.
-* @returns {BigInt}
+* @returns {bigint}
 */
-  read_pc(): BigInt;
+  read_pc(): bigint;
 /**
 * Gets ascii code byte sent from the emulator to terminal.
 * The emulator holds output buffer inside. This method returns zero
@@ -216,7 +216,7 @@ export class WasmRiscv {
 *    Otherwize zero.
 * @param {string} s
 * @param {Uint8Array} error
-* @returns {BigInt}
+* @returns {bigint}
 */
-  get_address_of_symbol(s: string, error: Uint8Array): BigInt;
+  get_address_of_symbol(s: string, error: Uint8Array): bigint;
 }
