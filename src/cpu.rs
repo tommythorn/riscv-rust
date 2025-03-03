@@ -31,8 +31,8 @@ pub struct Cpu {
     fs: u8,
 
     pub cycle: u64,
-    privilege_mode: PrivilegeMode,
-    pc: i64,
+    pub privilege_mode: PrivilegeMode,
+    pub pc: i64,
     pub insn_addr: i64, // XXX make accessor functions instead of pub?
     pub insn: u32,      // This is the original original bytes, prior to decompression
     wfi: bool,
@@ -690,7 +690,7 @@ impl Cpu {
             Some(SatpMode::Bare) => AddressingMode::None,
             Some(SatpMode::Sv39) => AddressingMode::SV39,
             Some(SatpMode::Sv48) => AddressingMode::SV48,
-            Some(SatpMode::Sv57) => todo!("Unsupported SATP mode SV57"),
+            Some(SatpMode::Sv57) => AddressingMode::SV57,
             Some(SatpMode::Sv64) => todo!("Unsupported SATP mode SV64"),
             _ => todo!("Illegal SATP mode {satp_mode:02x}"),
         };

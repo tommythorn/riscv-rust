@@ -211,7 +211,7 @@ impl Emulator {
             }
         }
 
-        self.cpu.update_pc(header.e_entry as i64);
+        self.cpu.update_pc(/*header.e_entry as i64*/ 0x8000_0000);
     }
 
     /// Loads symbols of program and adds them to `symbol_map`.

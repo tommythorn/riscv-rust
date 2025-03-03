@@ -57,7 +57,8 @@ pub struct Mmu {
 pub enum AddressingMode {
     None,
     SV39,
-    SV48, // @TODO: Implement
+    SV48,
+    SV57,
 }
 
 // XXX Shouldn't this be in cpu.rs?
@@ -111,7 +112,17 @@ impl Mmu {
     /// # Arguments
     /// * `capacity`
     pub fn init_memory(&mut self, capacity: usize) {
+        use std::fs::File;
+        use std::io::Read;
+
         self.memory.init(capacity);
+
+        let mut file = File::open("fw_jump.bin").unwrap();
+        let mut buf = vec![];
+        file.read_to_end(&mut buf).unwrap();
+        println!("Read {} bytes", buf.len());
+        self.memory.0[0..buf.len()].copy_from_slice(&buf);
+        assert_ne!(self.memory.0[0], 0);
     }
 
     /// Initializes Virtio block disk. This method is expected to be called only once.
@@ -644,6 +655,7 @@ impl Mmu {
         let levels = match self.addressing_mode {
             AddressingMode::SV39 => 3,
             AddressingMode::SV48 => 4,
+            AddressingMode::SV57 => 5,
             AddressingMode::None => unreachable!(),
         };
 
