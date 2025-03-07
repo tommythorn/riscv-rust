@@ -11,7 +11,7 @@ const IIR_NO_INTERRUPT: u8 = 0x7;
 
 const LSR_DATA_AVAILABLE: u8 = 0x1;
 const LSR_THR_EMPTY: u8 = 0x20;
-const LSR_TEMT: u8 = 0x40;            /* Xmitter empty */
+const LSR_TEMT: u8 = 0x40; /* Xmitter empty */
 
 /// Emulates UART. Refer to the [specification](http://www.ti.com/lit/ug/sprugp1/sprugp1.pdf)
 /// for the detail.
@@ -139,7 +139,7 @@ impl Uart {
                 let r = self.lsr;
                 //self.lsr |= LSR_THR_EMPTY;
                 r
-            },
+            }
             0x10000007 => self.scr,
             _ => 0,
         }

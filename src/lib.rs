@@ -73,7 +73,7 @@ impl Emulator {
     /// is [`riscv-tests`](https://github.com/riscv/riscv-tests).
     /// Otherwise calls `run_program()`.
     pub fn run(&mut self) {
-        if true || self.is_test {
+        if self.is_test {
             self.run_test();
         } else {
             self.run_program();
