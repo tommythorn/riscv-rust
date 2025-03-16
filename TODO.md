@@ -1,5 +1,18 @@
 # Stuff To Do
 
+## Debugging support
+
+Build a tracing system that
+- Enumerate all fetched instructions (without holes)
+- Maintain a map Reg -> Seqno of which instruction last wrote a (integer) register)
+- Maintains a log so we can map Seqno -> (Addr, Insn, Option<Seqno>, Option<Seqno>])
+
+(gdb) p cpu.x_seqno[f.rs1]
+$16 = 1973743552
+(gdb) p cpu.x_seqno[f.rs2]
+$17 = 1973743501
+
+
 ## Correctness
 
 - The whole CSR handling is very suspect

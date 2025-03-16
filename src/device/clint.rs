@@ -41,9 +41,9 @@ impl Clint {
     pub fn service(&mut self, cycle: u64, mip: &mut u64) {
         let mut msystem_time = cycle / 16; // XXX An arbitrary number that seems to work ok
 
-        if let Ok(t) = self.t0.elapsed() {
+        /*if let Ok(t) = self.t0.elapsed() {
             msystem_time = t.as_micros() as u64; // 1 µs timebase
-        }
+        }*/
         self.mtime_system = msystem_time;
 
         if (self.msip & 1) != 0 {

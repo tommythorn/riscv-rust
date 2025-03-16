@@ -43,6 +43,7 @@ pub struct Cpu {
     mmu: Mmu,
     reservation: Option<i64>,
     decode_cache: DecodeCache,
+    read: Vec<usize>,
 }
 
 #[allow(dead_code)]
@@ -147,6 +148,7 @@ impl Cpu {
             mmu: Mmu::new(terminal),
             reservation: None,
             decode_cache: DecodeCache::new(),
+            read: vec![],
         };
         cpu.csr[Csr::Misa as usize] = 1 << 63; // RV64
         for c in "SUIMAFDC".bytes() {
@@ -160,7 +162,8 @@ impl Cpu {
     }
 
     #[inline]
-    const fn read_x(&self, r: usize) -> i64 {
+    fn read_x(&mut self, r: usize) -> i64 {
+        self.read.push(self.x_seqno[r]);
         self.x_[r]
     }
 
@@ -241,6 +244,12 @@ impl Cpu {
         };
         self.insn = word as u32;
 
+        if self.seqno >= 1973743554 {
+            // @1973743554 add x15[0x1e9]=x15[0x1e8 $2], x4[1 $53]
+            // @1973743555 sd ??,x15(0) -->> BOOM
+            println!("** fetching instruction {:016x} {word:08x} at seqno {}", self.insn_addr, self.seqno);
+        }
+
         let (insn, npc) = decompress(self.insn_addr, word as u32);
         self.pc = npc;
         let Ok(decoded) = self.decode(insn) else {
@@ -253,6 +262,15 @@ impl Cpu {
 
         if let Err(e) = (decoded.operation)(self.insn_addr as u64, insn, self) {
             self.handle_exception(&e);
+        }
+
+        if self.seqno > 1973743000 {
+            let mut buf = String::new();
+            write!(buf, "@{}: (use {:?}) ", self.seqno, self.read);
+            write!(buf, "{buf:35}");
+            self.read = vec![];
+            self.disassemble_insn(&mut buf, self.insn_addr, self.insn);
+            println!("{buf}");
         }
     }
 
@@ -748,20 +766,24 @@ impl Cpu {
     /// Disassembles an instruction pointed by Program Counter and
     /// and return the [possibly] writeback register
     #[allow(clippy::cast_sign_loss)]
-    pub fn disassemble(&mut self, s: &mut String) -> usize {
-        let Some(word32) = self.memop_disass(self.pc) else {
-            let _ = write!(s, "<inaccessible>");
-            return 0;
-        };
-        let word32 = (word32 & 0xffffffff) as u32;
+    pub fn disassemble_insn(&mut self, s: &mut String, addr: i64, word32: u32) -> usize {
         let (insn, _) = decompress(0, word32);
         let Ok(decoded) = self.decode_raw(insn) else {
             let _ = write!(s, "{:016x} {word32:08x} Illegal instruction", self.pc);
             return 0;
         };
 
-        let _ = write!(s, "{:016x} {word32:08x} {} ", self.pc, decoded.name);
-        (decoded.disassemble)(s, self, word32, self.pc as u64, true)
+        let _ = write!(s, "{:016x} {word32:08x} {} ", addr, decoded.name);
+        (decoded.disassemble)(s, self, word32, addr as u64, true)
+    }
+
+    #[allow(clippy::cast_sign_loss)]
+    pub fn disassemble(&mut self, s: &mut String) -> usize {
+        let Some(word32) = self.memop_disass(self.pc) else {
+            let _ = write!(s, "<inaccessible>");
+            return 0;
+        };
+        self.disassemble_insn(s, self.pc, word32 as u32)
     }
 
     /// Returns mutable `Mmu`
