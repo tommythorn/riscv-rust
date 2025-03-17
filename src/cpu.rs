@@ -159,13 +159,17 @@ impl Cpu {
 
     fn decode_new(&self, word: u32) -> Result<&Instruction, ()> {
         let w = word as usize;
-        let p = self.flat_decode_table[1 + ((w >> 2) & 31)] as usize;
-        let start = self.flat_decode_table[p] & 31;
-        let size = self.flat_decode_table[p] >> 5;
-        let p = self.flat_decode_table[p + 1 + ((w >> start) & ((1 << size) - 1))] as usize;
-        let start = self.flat_decode_table[p] & 31;
-        let size = self.flat_decode_table[p] >> 5;
-        let p = self.flat_decode_table[p + 1 + ((w >> start) & ((1 << size) - 1))] as usize;
+
+        let p: usize = self.flat_decode_table[2 + ((w >> 2) & 31)] as usize;
+
+        let start = self.flat_decode_table[p];
+        let mask = self.flat_decode_table[p + 1] as usize;
+        let p = self.flat_decode_table[p + 2 + ((w >> start) & mask)] as usize;
+
+        let start = self.flat_decode_table[p];
+        let mask = self.flat_decode_table[p + 1] as usize;
+        let p = self.flat_decode_table[p + 2 + ((w >> start) & mask)] as usize;
+
         let inst = &INSTRUCTIONS[p];
         if word & inst.mask == inst.data {
             Ok(inst)
@@ -4500,7 +4504,8 @@ impl DecoderTree {
         match self {
             DecoderTree::L(start, size, insn) => {
                 let p = tab.len();
-                tab.push(u16::try_from(start | size << 5).unwrap());
+                tab.push(u16::try_from(*start).unwrap());
+                tab.push(u16::try_from((1 << size) - 1).unwrap());
                 for i in insn {
                     tab.push(u16::try_from(*i).unwrap());
                 }
@@ -4508,11 +4513,12 @@ impl DecoderTree {
             }
             DecoderTree::N(start, size, dts) => {
                 let p = tab.len();
-                tab.push(u16::try_from(start | size << 5).unwrap());
+                tab.push(u16::try_from(*start).unwrap());
+                tab.push(u16::try_from((1 << size) - 1).unwrap());
                 for _ in dts {
                     tab.push(9999);
                 }
-                let mut pd = p + 1;
+                let mut pd = p + 2;
                 for d in dts {
                     tab[pd] = d.flatten(tab);
                     pd += 1;
