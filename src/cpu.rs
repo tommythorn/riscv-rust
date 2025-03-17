@@ -40,6 +40,7 @@ pub struct Cpu {
     mmu: Mmu,
     reservation: Option<i64>,
     decode_cache: DecodeCache,
+    flat_decode_table: Vec<u16>,
 }
 
 #[allow(dead_code)]
@@ -141,7 +142,10 @@ impl Cpu {
             mmu: Mmu::new(terminal),
             reservation: None,
             decode_cache: DecodeCache::new(),
+            flat_decode_table: vec![],
         };
+        let dt = decodegen();
+        dt.flatten(&mut cpu.flat_decode_table);
         cpu.csr[Csr::Misa as usize] = 1 << 63; // RV64
         for c in "SUIMAFDC".bytes() {
             cpu.csr[Csr::Misa as usize] |= 1 << (c as usize - 65);
@@ -151,6 +155,23 @@ impl Cpu {
         cpu.x[0] = 0; // boot hart
         cpu.x[11] = 0x1020; // start of DTB (XXX could put that elsewhere);
         cpu
+    }
+
+    fn decode_new(&self, word: u32) -> Result<&Instruction, ()> {
+        let w = word as usize;
+        let p = self.flat_decode_table[1 + ((w >> 2) & 31)] as usize;
+        let start = self.flat_decode_table[p] & 31;
+        let size = self.flat_decode_table[p] >> 5;
+        let p = self.flat_decode_table[p + 1 + ((w >> start) & ((1 << size) - 1))] as usize;
+        let start = self.flat_decode_table[p] & 31;
+        let size = self.flat_decode_table[p] >> 5;
+        let p = self.flat_decode_table[p + 1 + ((w >> start) & ((1 << size) - 1))] as usize;
+        let inst = &INSTRUCTIONS[p];
+        if word & inst.mask == inst.data {
+            Ok(inst)
+        } else {
+            Err(())
+        }
     }
 
     /// Updates Program Counter content
@@ -226,7 +247,7 @@ impl Cpu {
 
         let (insn, npc) = decompress(self.insn_addr, word as u32);
         self.pc = npc;
-        let Ok(decoded) = self.decode(insn) else {
+        let Ok(decoded) = self.decode_new(insn) else {
             self.handle_exception(&Trap {
                 trap_type: TrapType::IllegalInstruction,
                 value: word,
@@ -984,7 +1005,7 @@ impl Cpu {
         }
     }
 }
-
+#[derive(Debug)]
 struct Instruction {
     mask: u32,
     data: u32, // @TODO: rename
@@ -1772,7 +1793,12 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf000707f,
         data: 0x0000000f,
         name: "FENCE",
-        operation: |_cpu, _word, _address| {
+        operation: |_cpu, word, _address| {
+            if word == 0x0100000f {
+                // Nothing to do here, but it would be interesting to see
+                // it used.
+                todo!("pause");
+            }
             // Fence memory ops (we are currently TSO already)
             Ok(())
         },
@@ -1785,18 +1811,6 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_cpu, _word, _address| {
             // Fence memory ops (we are currently TSO already)
             Ok(())
-        },
-        disassemble: dump_empty,
-    },
-    Instruction {
-        mask: 0xffffffff,
-        data: 0x0100000f,
-        name: "PAUSE",
-        operation: |_cpu, _word, _address| {
-            // Nothing to do here, but it would be interesting to see
-            // it used.
-            todo!("pause");
-            //Ok(())
         },
         disassemble: dump_empty,
     },
@@ -3864,6 +3878,18 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         },
         disassemble: dump_empty,
     },
+    Instruction {
+        mask: 0,
+        data: 0,
+        name: "INVALID",
+        operation: |_address, _word, _cpu| {
+            Err(Trap {
+                trap_type: TrapType::IllegalInstruction,
+                value: 0,
+            })
+        },
+        disassemble: dump_empty,
+    },
 ];
 
 /// The number of results [`DecodeCache`](struct.DecodeCache.html) holds.
@@ -4178,13 +4204,13 @@ mod test_cpu {
     fn decode() {
         let mut cpu = create_cpu();
         // 0x13 is addi instruction
-        match cpu.decode(0x13) {
+        match cpu.decode_new(0x13) {
             Ok(inst) => assert_eq!(inst.name, "ADDI"),
             Err(_e) => panic!("Failed to decode"),
         }
         // .decode() returns error for invalid word data.
         assert!(
-            cpu.decode(0x0).is_err(),
+            cpu.decode_new(0x0).is_err(),
             "Unexpectedly succeeded in decoding"
         );
         // @TODO: Should I test all instructions?
@@ -4408,4 +4434,239 @@ mod test_decode_cache {
             panic!("Unexpected cache hit")
         }
     }
+}
+
+#[derive(Debug)]
+pub enum DecoderTree {
+    L(usize, usize, Vec<usize>),
+    N(usize, usize, Vec<DecoderTree>),
+}
+
+fn flat_decode(tab: &[u16], w: u32) -> usize {
+    let p = 0;
+
+    let (start, size) = (tab[p] & 31, tab[p] >> 5);
+    let i = (w as usize >> start) & ((1 << size) - 1);
+    let p2 = tab[p + 1 + i] as usize;
+    //println!("flat_decode0({p}+{size}, {w:08x}) -> {i} -> {p2}");
+
+    let (start, size) = (tab[p2] & 31, tab[p2] >> 5);
+    let i = (w as usize >> start) & ((1 << size) - 1);
+    let p2 = tab[p2 + 1 + i] as usize;
+    //println!("flat_decode0({p2}+{size}, {w:08x}) -> {i} -> {p2}");
+
+    let (start, size) = (tab[p2] & 31, tab[p2] >> 5);
+    let i = (w as usize >> start) & ((1 << size) - 1);
+    let p3 = tab[p2 + 1 + i] as usize;
+    //println!("flat_decode0({p2}+{size}, {w:08x}) -> {i} -> {p3} FINAL");
+
+    p3
+}
+
+impl DecoderTree {
+    fn decode(&self, w: u32) -> usize {
+        use DecoderTree::*;
+        let N(p, size, tab) = self else {
+            unreachable!()
+        };
+        assert_eq!(1 << size, tab.len());
+        let i = (w as usize >> p) & ((1 << size) - 1);
+        println!("decode({p}+{size}, {w:08x}) -> {i}");
+        let N(p, size, tab) = &tab[i] else {
+            unreachable!()
+        };
+        assert_eq!(1 << size, tab.len());
+        let i = (w as usize >> p) & ((1 << size) - 1);
+        println!("decode({p}+{size}, {w:08x}) -> {i}");
+        let L(p, size, tab) = &tab[i] else {
+            unreachable!()
+        };
+        let i = (w as usize >> p) & ((1 << size) - 1);
+        assert_eq!(1 << size, tab.len());
+        println!(
+            "decode({p}+{size}, {w:08x}) -> {tab:?}[{i}] = {} final",
+            tab[i]
+        );
+        tab[i]
+    }
+
+    fn flatten(&self, tab: &mut Vec<u16>) -> u16 {
+        // [[[2 3 5 7],
+        //   [0 0 1 0]],
+        //  [[11 22 33 44]
+        //   [99 88 77 66]]]
+        //  --> L0 L1 L00 L01 L10 L11    2 3 5 7 0 0 1 0   11 22 33 44  99 88 77 66
+        //  --> 2  4  6   10  14  18     2 3 5 7 0 0 1 0   11 22 33 44  99 88 77 66
+        match self {
+            DecoderTree::L(start, size, insn) => {
+                let p = tab.len();
+                tab.push(u16::try_from(start | size << 5).unwrap());
+                for i in insn {
+                    tab.push(u16::try_from(*i).unwrap());
+                }
+                u16::try_from(p).unwrap()
+            }
+            DecoderTree::N(start, size, dts) => {
+                let p = tab.len();
+                tab.push(u16::try_from(start | size << 5).unwrap());
+                for _ in dts {
+                    tab.push(9999);
+                }
+                let mut pd = p + 1;
+                for d in dts {
+                    tab[pd] = d.flatten(tab);
+                    pd += 1;
+                }
+                u16::try_from(p).unwrap()
+            }
+        }
+    }
+}
+fn count(dt: &DecoderTree) -> usize {
+    use DecoderTree::*;
+    match dt {
+        L(_, _, p) => p.len(),
+        N(_, _, p) => p.iter().map(|dt| count(dt)).sum(),
+    }
+}
+
+#[test]
+fn test_dt() {
+    let dt = decodegen();
+    let mut fdt = vec![];
+    let _zero = dt.flatten(&mut fdt);
+    println!("Flat: {fdt:?}");
+
+    assert_eq!(dt.decode(0), 10 /*INSTRUCTION_NUM*/); // the lsb check belongs to the final check
+    assert_eq!(INSTRUCTIONS[dt.decode(0x4034571b)].name, "SRAIW");
+    assert_eq!(INSTRUCTIONS[dt.decode(0x00747293)].name, "ANDI");
+
+    assert_eq!(INSTRUCTIONS[flat_decode(&fdt, 0x4034571b)].name, "SRAIW");
+    assert_eq!(INSTRUCTIONS[flat_decode(&fdt, 0x00747293)].name, "ANDI");
+
+    /*
+    80000000a2:   4034571b                sraiw   a4,s0,0x3
+    80000000a6:   00747293                andi    t0,s0,7
+    80000000aa:   00f77313                andi    t1,a4,15
+    80000000ae:   84ae                    mv      s1,a1
+    80000000b0:   00431693                slli    a3,t1,0x4
+    80000000b4:   89aa                    mv      s3,a0
+    80000000b6:   0605d583                lhu     a1,96(a1)
+    80000000ba:   0066e3b3                or      t2,a3,t1
+    80000000be:   04028063                beqz    t0,80000000fe <calc_func+0x8a>
+    80000000c2:   4885                    li      a7,1
+    80000000c4:   07128b63                beq     t0,a7,800000013a <calc_func+0xc6>
+    80000000c8:   03041e93                slli    t4,s0,0x30
+    */
+}
+
+pub fn decodegen() -> DecoderTree {
+    let mut patterns = Vec::new();
+    for (p, insn) in INSTRUCTIONS[0..INSTRUCTION_NUM - 1].iter().enumerate() {
+        patterns.push((insn.mask & !3, insn.data & !3, p));
+    }
+    //let patterns = [(6, 0), (0x7ffe, 0x1000)];
+    let dt = search("", &patterns[..], 2);
+    //println!("Result: {dt:?}");
+    //println!("        {} elements", count(&dt));
+    dt
+}
+
+pub fn search(prefix: &str, patterns: &[(u32, u32, usize)], depth: usize) -> DecoderTree {
+    //println!("{prefix} Search {useful:08x} in {patterns:x?}");
+
+    let mut best_size = 0;
+    let mut best_start = 0;
+    let mut best_cost = !0;
+    let mut _best_partition_count = Vec::new();
+    let mut best_partition = Vec::new();
+    let mut partition_count = Vec::new();
+    let mut partition = Vec::new();
+
+    // Search through different size of fields at different starting posisions
+    for size in 0..=10 {
+        //println!("Searching {bits}b cuts");
+        let mask: u32 = (1 << size) - 1;
+        for start in 0..=32 - size {
+            let shifted_mask = if start >= 32 { 0 } else { mask << start };
+
+            partition_count.clear();
+            partition.clear();
+            partition_count.resize(1 << size, 0);
+            for _ in 0..1 << size {
+                partition.push(vec![]);
+            }
+
+            for c in 0..1 << size {
+                let word = if start >= 32 { 0 } else { c << start };
+                for (mask, data, p) in patterns {
+                    if shifted_mask & mask & word == shifted_mask & data {
+                        partition_count[c as usize] += 1;
+                        partition[c as usize].push((
+                            mask & !shifted_mask,
+                            data & !shifted_mask,
+                            *p,
+                        ));
+                    }
+                }
+            }
+
+            //let cost: usize = partition_count.iter().map(|s| s * s).sum::<usize>();
+            let cost = partition_count.iter().map(|s| s * s * s * s).sum::<usize>();
+            //let cost = *partition_count.iter().max().unwrap();
+            let cost = cost + size;
+            //let end = start + size - 1;
+            //println!("{prefix} {end}:{start} got cost {cost} {partition:x?}",);
+
+            if cost < best_cost {
+                /*println!(
+                    "Found a new best {}..{shift} at cost {cost}",
+                    shift + bits - 1
+                );*/
+                best_size = size;
+                best_start = start;
+                best_cost = cost;
+                best_partition = partition.clone();
+                _best_partition_count = partition_count.clone();
+            }
+        }
+    }
+    /*
+    print!("{prefix} best is {best_start}+{best_size} at cost {best_cost}:");
+    for p in &best_partition {
+        for e in p {
+            print!(" {}", INSTRUCTIONS[e.2].name);
+        }
+    }
+    println!();
+    */
+
+    if depth == 0 {
+        // We have reached the bottom; each partition better at most have a single member
+        // We reserve the last entry for illegal instructions
+        let mut res = vec![];
+        for p in &best_partition {
+            if p.is_empty() {
+                res.push(INSTRUCTION_NUM - 1);
+            } else if p.len() == 1 {
+                res.push(p[0].2);
+            } else {
+                panic!("We weren't able to generate a tree decoder");
+            }
+        }
+        assert_eq!(1 << best_size, best_partition.len());
+        assert_eq!(1 << best_size, res.len());
+        return DecoderTree::L(best_start, best_size, res);
+    }
+
+    let mut res = vec![];
+    // Recursively find the subpartitions
+    for p in 0..1 << best_size {
+        let prefix = format!("{prefix}[{best_start}+{best_size}]={p} ");
+        let n = search(&prefix, &best_partition[p], depth - 1);
+        res.push(n);
+    }
+    assert_eq!(1 << best_size, best_partition.len());
+    assert_eq!(1 << best_size, res.len());
+    DecoderTree::N(best_start, best_size, res)
 }
