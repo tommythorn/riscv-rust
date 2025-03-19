@@ -10,8 +10,9 @@ use crate::mmu::MemoryAccessType::{Execute, Read, Write};
 use crate::mmu::{AddressingMode, MemoryAccessType, Mmu};
 use crate::rvc;
 use crate::terminal::Terminal;
+use crate::tree_decoder;
 pub use csr::*;
-use log::info;
+use log;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use std::fmt::Write as _;
@@ -39,7 +40,7 @@ pub struct Cpu {
 
     mmu: Mmu,
     reservation: Option<i64>,
-    flat_decode_table: Vec<u16>,
+    decode_tree: Vec<u16>,
 }
 
 #[allow(dead_code)]
@@ -124,6 +125,11 @@ impl Cpu {
     #[must_use]
     #[allow(clippy::precedence)]
     pub fn new(terminal: Box<dyn Terminal>) -> Self {
+        let mut patterns = Vec::new();
+        for (p, insn) in INSTRUCTIONS[0..INSTRUCTION_NUM - 1].iter().enumerate() {
+            patterns.push((insn.mask & !3, insn.data & !3, p));
+        }
+
         let mut cpu = Self {
             x: [0; 32],
             f_: [0; 32],
@@ -140,11 +146,9 @@ impl Cpu {
             csr: vec![0; 4096].into_boxed_slice(), // XXX MUST GO AWAY SOON
             mmu: Mmu::new(terminal),
             reservation: None,
-            flat_decode_table: vec![],
+            decode_tree: tree_decoder::new(&patterns),
         };
-        let dt = decodegen();
-        dt.flatten(&mut cpu.flat_decode_table);
-        info!("FDT is {} entries", cpu.flat_decode_table.len());
+        log::info!("FDT is {} entries", cpu.decode_tree.len());
         cpu.csr[Csr::Misa as usize] = 1 << 63; // RV64
         for c in "SUIMAFDC".bytes() {
             cpu.csr[Csr::Misa as usize] |= 1 << (c as usize - 65);
@@ -229,7 +233,7 @@ impl Cpu {
 
         let (insn, npc) = decompress(self.insn_addr, word as u32);
         self.pc = npc;
-        let Ok(decoded) = decode_new(&self.flat_decode_table, insn) else {
+        let Ok(decoded) = decode(&self.decode_tree, insn) else {
             self.handle_exception(&Trap {
                 trap_type: TrapType::IllegalInstruction,
                 value: word,
@@ -705,7 +709,7 @@ impl Cpu {
         };
         let word32 = (word32 & 0xffffffff) as u32;
         let (insn, _) = decompress(0, word32);
-        let Ok(decoded) = decode_new(&self.flat_decode_table, insn) else {
+        let Ok(decoded) = decode(&self.decode_tree, insn) else {
             let _ = write!(s, "{:016x} {word32:08x} Illegal instruction", self.pc);
             return 0;
         };
@@ -949,6 +953,16 @@ impl Cpu {
         }
     }
 }
+
+const fn decode(fdt: &[u16], word: u32) -> Result<&Instruction, ()> {
+    let inst = &INSTRUCTIONS[tree_decoder::patmatch(fdt, word)];
+    if word & inst.mask == inst.data {
+        Ok(inst)
+    } else {
+        Err(())
+    }
+}
+
 #[derive(Debug)]
 struct Instruction {
     mask: u32,
@@ -3962,16 +3976,16 @@ mod test_cpu {
 
     #[test]
     #[allow(clippy::match_wild_err_arm)]
-    fn decode() {
+    fn decode_test() {
         let cpu = create_cpu();
         // 0x13 is addi instruction
-        match decode_new(&cpu.flat_decode_table, 0x13) {
+        match decode(&cpu.decode_tree, 0x13) {
             Ok(inst) => assert_eq!(inst.name, "ADDI"),
             Err(_e) => panic!("Failed to decode"),
         }
         // .decode() returns error for invalid word data.
         assert!(
-            decode_new(&cpu.flat_decode_table, 0x0).is_err(),
+            decode(&cpu.decode_tree, 0x0).is_err(),
             "Unexpectedly succeeded in decoding"
         );
         // @TODO: Should I test all instructions?
@@ -3983,7 +3997,7 @@ mod test_cpu {
         let cpu = create_cpu();
         // .decompress() doesn't directly return an instruction but
         // it returns decompressed word. Then you need to call .decode().
-        match decode_new(&cpu.flat_decode_table, decompress(0, 0x20).0) {
+        match decode(&cpu.decode_tree, decompress(0, 0x20).0) {
             Ok(inst) => assert_eq!(inst.name, "ADDI"),
             Err(_e) => panic!("Failed to decode"),
         }
@@ -3996,7 +4010,7 @@ mod test_cpu {
         let wfi_instruction = 0x10500073;
         let mut cpu = create_cpu();
         // Just in case
-        match decode_new(&cpu.flat_decode_table, wfi_instruction) {
+        match decode(&cpu.decode_tree, wfi_instruction) {
             Ok(inst) => assert_eq!(inst.name, "WFI"),
             Err(_e) => panic!("Failed to decode"),
         }
@@ -4125,247 +4139,4 @@ mod test_cpu {
         // x1 is not hardcoded zero
         assert_eq!(1, cpu.read_register(1));
     }
-}
-
-#[derive(Debug)]
-pub enum DecoderTree {
-    L(usize, usize, Vec<usize>),
-    N(usize, usize, Vec<DecoderTree>),
-}
-
-impl DecoderTree {
-    #[allow(clippy::unwrap_used)]
-    #[allow(clippy::missing_panics_doc)]
-    fn flatten(&self, tab: &mut Vec<u16>) -> u16 {
-        // [[[2 3 5 7],
-        //   [0 0 1 0]],
-        //  [[11 22 33 44]
-        //   [99 88 77 66]]]
-        //  --> L0 L1 L00 L01 L10 L11    2 3 5 7 0 0 1 0   11 22 33 44  99 88 77 66
-        //  --> 2  4  6   10  14  18     2 3 5 7 0 0 1 0   11 22 33 44  99 88 77 66
-        match self {
-            Self::L(start, size, insns) => {
-                // Expensive search for an existing useful option
-                let start = u16::try_from(*start).unwrap();
-                let mask = u16::try_from((1 << size) - 1).unwrap();
-
-                'outer: for i in 0..tab.len() - insns.len() - 2 {
-                    if tab[i] != start || tab[i + 1] != mask {
-                        continue;
-                    }
-                    for (j, insn) in insns.iter().enumerate() {
-                        if tab[i + 2 + j] != u16::try_from(*insn).unwrap() {
-                            continue 'outer;
-                        }
-                    }
-
-                    info!(
-                        "** We appear to have found a match at {i}, saving {} entries!",
-                        insns.len() + 2
-                    );
-                    return u16::try_from(i).unwrap();
-                }
-
-                let p = tab.len();
-                tab.push(start);
-                tab.push(mask);
-                for insn in insns {
-                    tab.push(u16::try_from(*insn).unwrap());
-                }
-                u16::try_from(p).unwrap()
-            }
-            Self::N(start, size, dts) => {
-                let p = tab.len();
-                tab.push(u16::try_from(*start).unwrap());
-                tab.push(u16::try_from((1 << size) - 1).unwrap());
-                for _ in dts {
-                    tab.push(9999);
-                }
-                let mut pd = p + 2;
-                for d in dts {
-                    tab[pd] = d.flatten(tab);
-                    pd += 1;
-                }
-                u16::try_from(p).unwrap()
-            }
-        }
-    }
-}
-
-const fn decode_new(fdt: &[u16], word: u32) -> Result<&Instruction, ()> {
-    let w = word as usize;
-
-    let p: usize = fdt[2 + ((w >> 2) & 31)] as usize;
-
-    let start = fdt[p];
-    let mask = fdt[p + 1] as usize;
-    let p = fdt[p + 2 + ((w >> start) & mask)] as usize;
-
-    let start = fdt[p];
-    let mask = fdt[p + 1] as usize;
-    let p = fdt[p + 2 + ((w >> start) & mask)] as usize;
-
-    let inst = &INSTRUCTIONS[p];
-    if word & inst.mask == inst.data {
-        Ok(inst)
-    } else {
-        Err(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    impl DecoderTree {
-        fn decode(&self, w: u32) -> usize {
-            use DecoderTree::*;
-            let N(p, size, tab) = self else {
-                unreachable!()
-            };
-            assert_eq!(1 << size, tab.len());
-            let i = (w as usize >> p) & ((1 << size) - 1);
-            println!("decode({p}+{size}, {w:08x}) -> {i}");
-            let N(p, size, tab) = &tab[i] else {
-                unreachable!()
-            };
-            assert_eq!(1 << size, tab.len());
-            let i = (w as usize >> p) & ((1 << size) - 1);
-            println!("decode({p}+{size}, {w:08x}) -> {i}");
-            let L(p, size, tab) = &tab[i] else {
-                unreachable!()
-            };
-            let i = (w as usize >> p) & ((1 << size) - 1);
-            assert_eq!(1 << size, tab.len());
-            println!(
-                "decode({p}+{size}, {w:08x}) -> {tab:?}[{i}] = {} final",
-                tab[i]
-            );
-            tab[i]
-        }
-    }
-
-    #[test]
-    fn test_dt() {
-        let dt = decodegen();
-        let mut fdt = vec![];
-        let _zero = dt.flatten(&mut fdt);
-
-        println!("Flat: {fdt:?}");
-
-        assert_eq!(dt.decode(0), 10 /*INSTRUCTION_NUM*/); // the lsb check belongs to the final check
-        assert_eq!(INSTRUCTIONS[dt.decode(0x4034571b)].name, "SRAIW");
-        assert_eq!(INSTRUCTIONS[dt.decode(0x00747293)].name, "ANDI");
-
-        assert_eq!(decode_new(&fdt, 0x4034571b).unwrap().name, "SRAIW");
-        assert_eq!(decode_new(&fdt, 0x00747293).unwrap().name, "ANDI");
-
-        /*
-        80000000a2:   4034571b                sraiw   a4,s0,0x3
-        80000000a6:   00747293                andi    t0,s0,7
-        80000000aa:   00f77313                andi    t1,a4,15
-        80000000ae:   84ae                    mv      s1,a1
-        80000000b0:   00431693                slli    a3,t1,0x4
-        80000000b4:   89aa                    mv      s3,a0
-        80000000b6:   0605d583                lhu     a1,96(a1)
-        80000000ba:   0066e3b3                or      t2,a3,t1
-        80000000be:   04028063                beqz    t0,80000000fe <calc_func+0x8a>
-        80000000c2:   4885                    li      a7,1
-        80000000c4:   07128b63                beq     t0,a7,800000013a <calc_func+0xc6>
-        80000000c8:   03041e93                slli    t4,s0,0x30
-        */
-    }
-}
-
-#[must_use]
-pub fn decodegen() -> DecoderTree {
-    let mut patterns = Vec::new();
-    for (p, insn) in INSTRUCTIONS[0..INSTRUCTION_NUM - 1].iter().enumerate() {
-        patterns.push((insn.mask & !3, insn.data & !3, p));
-    }
-    search("", &patterns[..], 2)
-}
-
-#[allow(clippy::assigning_clones)]
-#[allow(clippy::needless_range_loop)]
-#[allow(clippy::missing_panics_doc)]
-#[must_use]
-pub fn search(prefix: &str, patterns: &[(u32, u32, usize)], depth: usize) -> DecoderTree {
-    let mut best_size = 0;
-    let mut best_start = 0;
-    let mut best_cost = !0;
-    let mut best_partition = Vec::new();
-    let mut partition_count = Vec::new();
-    let mut partition = Vec::new();
-
-    // Search through different size of fields at different starting posisions
-    'outer: for size in 0..=9 {
-        let mask: u32 = (1 << size) - 1;
-        for start in 0..=32 - size {
-            let shifted_mask = if start >= 32 { 0 } else { mask << start };
-
-            partition_count.clear();
-            partition.clear();
-            partition_count.resize(1 << size, 0);
-            for _ in 0..1 << size {
-                partition.push(vec![]);
-            }
-
-            for c in 0..1 << size {
-                let word = if start >= 32 { 0 } else { c << start };
-                for (mask, data, p) in patterns {
-                    if shifted_mask & mask & word == shifted_mask & data {
-                        partition_count[c as usize] += 1;
-                        partition[c as usize].push((
-                            mask & !shifted_mask,
-                            data & !shifted_mask,
-                            *p,
-                        ));
-                    }
-                }
-            }
-
-            let cost = partition_count.iter().map(|s| s * s * s * s).sum::<usize>() + size;
-            if cost < best_cost {
-                best_size = size;
-                best_start = start;
-                best_cost = cost;
-                best_partition = partition.clone();
-                if best_cost == patterns.len() {
-                    break 'outer;
-                }
-            }
-        }
-    }
-
-    log::trace!("Best size {best_size}");
-
-    if depth == 0 {
-        // We have reached the bottom; each partition better at most have a single member
-        // We reserve the last entry for illegal instructions
-        let mut res = vec![];
-        for p in &best_partition {
-            if p.is_empty() {
-                res.push(INSTRUCTION_NUM - 1);
-            } else if p.len() == 1 {
-                res.push(p[0].2);
-            } else {
-                panic!("We weren't able to generate a tree decoder");
-            }
-        }
-        assert_eq!(1 << best_size, best_partition.len());
-        assert_eq!(1 << best_size, res.len());
-        return DecoderTree::L(best_start, best_size, res);
-    }
-
-    let mut res = vec![];
-    // Recursively find the subpartitions
-    for p in 0..1 << best_size {
-        let prefix = format!("{prefix}[{best_start}+{best_size}]={p} ");
-        let n = search(&prefix, &best_partition[p], depth - 1);
-        res.push(n);
-    }
-    assert_eq!(1 << best_size, best_partition.len());
-    assert_eq!(1 << best_size, res.len());
-    DecoderTree::N(best_start, best_size, res)
 }
