@@ -73,7 +73,7 @@ impl Emulator {
     /// is [`riscv-tests`](https://github.com/riscv/riscv-tests).
     /// Otherwise calls `run_program()`.
     pub fn run(&mut self) {
-        cpu::decodegen();
+        let _ = cpu::decodegen();
         if self.is_test {
             self.run_test();
         } else {
