@@ -4299,7 +4299,7 @@ pub fn search(prefix: &str, patterns: &[(u32, u32, usize)], depth: usize) -> Dec
     let mut partition = Vec::new();
 
     // Search through different size of fields at different starting posisions
-    for size in 0..=10 {
+    'outer: for size in 0..=9 {
         let mask: u32 = (1 << size) - 1;
         for start in 0..=32 - size {
             let shifted_mask = if start >= 32 { 0 } else { mask << start };
@@ -4331,9 +4331,14 @@ pub fn search(prefix: &str, patterns: &[(u32, u32, usize)], depth: usize) -> Dec
                 best_start = start;
                 best_cost = cost;
                 best_partition = partition.clone();
+                if best_cost == patterns.len() {
+                    break 'outer;
+                }
             }
         }
     }
+
+    log::trace!("Best size {best_size}");
 
     if depth == 0 {
         // We have reached the bottom; each partition better at most have a single member
