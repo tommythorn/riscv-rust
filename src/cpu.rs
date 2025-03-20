@@ -157,6 +157,52 @@ impl Cpu {
             2 << MSTATUS_UXL_SHIFT | 2 << MSTATUS_SXL_SHIFT | 3 << MSTATUS_MPP_SHIFT;
         cpu.x[10] = 0; // boot hart
         cpu.x[11] = 0x1020; // start of DTB (XXX could put that elsewhere);
+
+        // Count the number of compressed instructions we support
+        let mut seen = std::collections::HashMap::new();
+        let mut count = 0;
+        let mut unassigned = 0;
+        println!("Compressed instructions:");
+        for word in 0..=65535u32 {
+            if word % 4 == 3 {
+                continue;
+            }
+
+            let (insn, _npc) = decompress(0, word);
+            let idx = tree_decoder::patmatch(&cpu.decode_tree, insn);
+            if let Some(value) = seen.get(&idx) {
+                seen.insert(idx, value | word & 0xFFFF);
+                continue;
+            }
+
+            unassigned += 1;
+
+            if idx == INSTRUCTION_NUM - 1 {
+                continue;
+            }
+
+            let inst = &INSTRUCTIONS[idx];
+            if insn & inst.mask != inst.data {
+                continue;
+            }
+
+            seen.insert(idx, (word & 0xFFFF) | (word << 16));
+            count += 1;
+            unassigned -= 1;
+        }
+
+        for (idx, zerosones) in seen.iter() {
+            let variable = zerosones & 0xFFFF & !(zerosones >> 16);
+            println!(
+                "  C.{:7} = {:016b} ({:2} bits)",
+                INSTRUCTIONS[*idx as usize].name,
+                variable,
+		variable.count_ones()
+            );
+        }
+
+        println!("In all, {count} compressed instructions ({unassigned} patterns still free)");
+
         cpu
     }
 
