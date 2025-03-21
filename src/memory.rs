@@ -75,12 +75,17 @@ impl Memory {
     /// # Errors
     /// If any part of the access is outside memory, an unit error is returned
     #[allow(clippy::cast_possible_truncation)]
-    pub fn write_u8(&mut self, pa: u64, b: u8) -> Result<(), ()> {
+    pub fn write_u8(&mut self, pa: u64, value: u8) -> Result<(), ()> {
         let offset = pa.wrapping_sub(DRAM_BASE) as usize;
         if self.0.len() <= offset {
             return Err(());
         }
-        self.0[offset] = b;
+
+        if pa & 0xFFF00000 == 0x80200000 {
+            println!("** Storing ${value:02x} to ${pa:x}");
+        }
+
+        self.0[offset] = value;
         Ok(())
     }
 
@@ -93,6 +98,11 @@ impl Memory {
             // XXX would still fail DRAM_BASE-1 but the more exhausing checking is expensive
             return Err(());
         }
+
+        if pa & 0xFFF00000 == 0x80200000 {
+            println!("** Storing ${value:x} to ${pa:x}");
+        }
+
         self.0[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
         Ok(())
     }
@@ -106,6 +116,11 @@ impl Memory {
             // XXX would still fail DRAM_BASE-3..DRAM_BASE-1 but the more exhausing checking is expensive
             return Err(());
         }
+
+        if pa & 0xFFF00000 == 0x80200000 {
+            println!("** Storing ${value:x} to ${pa:x}");
+        }
+
         self.0[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
         Ok(())
     }
@@ -119,6 +134,11 @@ impl Memory {
             // XXX would still fail DRAM_BASE-3..DRAM_BASE-1 but the more exhausing checking is expensive
             return Err(());
         }
+
+        if pa & 0xFFF00000 == 0x80200000 {
+            println!("** Storing ${value:x} to ${pa:x}");
+        }
+
         self.0[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
         Ok(())
     }
@@ -136,6 +156,11 @@ impl Memory {
     /// If any part of the access is outside memory, an unit error is returned
     pub fn slice(&mut self, pa: i64, size: usize) -> Result<&mut [u8], ()> {
         let pa = pa.wrapping_sub(DRAM_BASE as i64) as usize;
+
+        if pa & 0xFFF00000 == 0x80200000 {
+            println!("** Slice access to ${pa:x}..${:x}", pa + size - 1);
+        }
+
         if pa <= self.0.len() && pa + size <= self.0.len() {
             Ok(&mut self.0[pa..pa + size])
         } else {

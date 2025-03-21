@@ -15,6 +15,7 @@ pub use csr::*;
 use log;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use std::collections::VecDeque;
 use std::fmt::Write as _;
 
 pub const CONFIG_SW_MANAGED_A_AND_D: bool = false;
@@ -41,6 +42,7 @@ pub struct Cpu {
     mmu: Mmu,
     reservation: Option<i64>,
     decode_tree: Vec<u16>,
+    execution_trace: VecDeque<(i64, u32)>,
 }
 
 #[allow(dead_code)]
@@ -147,6 +149,7 @@ impl Cpu {
             mmu: Mmu::new(terminal),
             reservation: None,
             decode_tree: tree_decoder::new(&patterns),
+            execution_trace: VecDeque::new(),
         };
         log::info!("FDT is {} entries", cpu.decode_tree.len());
         cpu.csr[Csr::Misa as usize] = 1 << 63; // RV64
@@ -229,7 +232,16 @@ impl Cpu {
             // _and_ they turn out to be a legal instruction.
             return;
         };
-        self.insn = word as u32;
+
+        self.insn = if word % 4 == 3 {
+            word as u32
+        } else {
+            word as u16 as u32
+        };
+        self.execution_trace.push_back((self.insn_addr, self.insn));
+        if self.execution_trace.len() > 16 {
+            let _ = self.execution_trace.pop_front();
+        }
 
         let (insn, npc) = decompress(self.insn_addr, word as u32);
         self.pc = npc;
@@ -280,6 +292,19 @@ impl Cpu {
     }
 
     fn handle_exception(&mut self, exception: &Trap) {
+        if matches!(exception.trap_type, TrapType::IllegalInstruction) {
+            println!(
+                "** Illegal instruction at {:08x} {:08x}",
+                self.insn_addr, self.insn
+            );
+            println!("** trace");
+            let trace = std::mem::take(&mut self.execution_trace);
+            for (addr, word32) in &trace {
+                let mut buf = String::new();
+                self.disassemble2(&mut buf, *addr, *word32, false);
+                println!("** {buf}");
+            }
+        }
         self.handle_trap(exception, self.insn_addr, false);
     }
 
@@ -708,14 +733,19 @@ impl Cpu {
             return 0;
         };
         let word32 = (word32 & 0xffffffff) as u32;
+        self.disassemble2(s, self.pc, word32, true)
+    }
+
+    #[allow(clippy::cast_sign_loss)]
+    pub fn disassemble2(&mut self, s: &mut String, addr: i64, word32: u32, values: bool) -> usize {
         let (insn, _) = decompress(0, word32);
         let Ok(decoded) = decode(&self.decode_tree, insn) else {
-            let _ = write!(s, "{:016x} {word32:08x} Illegal instruction", self.pc);
+            let _ = write!(s, "{addr:016x} {word32:08x} Illegal instruction");
             return 0;
         };
 
-        let _ = write!(s, "{:016x} {word32:08x} {} ", self.pc, decoded.name);
-        (decoded.disassemble)(s, self, word32, self.pc as u64, true)
+        let _ = write!(s, "{addr:016x} {word32:08x} {} ", decoded.name);
+        (decoded.disassemble)(s, self, insn, addr as u64, values)
     }
 
     /// Returns mutable `Mmu`
